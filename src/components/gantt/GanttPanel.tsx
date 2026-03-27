@@ -1,167 +1,264 @@
+import { useState } from 'react';
 import type { User, UserDataMap } from '../../types';
-import { teamColor } from '../../lib/utils';
+import { teamColor, fmtDate } from '../../lib/utils';
 
 interface Props {
   users: User[];
   userData: UserDataMap;
 }
 
+const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
+
+const USER_COLORS = [
+  '#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444',
+  '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4',
+];
+
 export default function GanttPanel({ users, userData }: Props) {
-  const items = users.filter(
-    (u) => userData[u.id]?.current?.okr?.startDate && userData[u.id]?.current?.okr?.endDate
-  );
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
 
-  if (!items.length) {
-    return <div className="text-center py-15 text-slate-400">OKR에 일정이 설정된 항목이 없습니다.</div>;
-  }
+  const userColorMap = new Map<string, string>();
+  users.forEach((u, i) => userColorMap.set(u.id, USER_COLORS[i % USER_COLORS.length]));
 
-  const allDates = items.flatMap((u) => [
-    userData[u.id].current.okr.startDate,
-    userData[u.id].current.okr.endDate,
-  ]);
-  const minD = new Date(allDates.reduce((a, b) => (a < b ? a : b)));
-  const maxD = new Date(allDates.reduce((a, b) => (a > b ? a : b)));
-  const totalDays = Math.max((maxD.getTime() - minD.getTime()) / 86400000, 1);
-
-  const months: Date[] = [];
-  const cur = new Date(minD);
-  cur.setDate(1);
-  while (cur <= maxD) {
-    months.push(new Date(cur));
-    cur.setMonth(cur.getMonth() + 1);
-  }
-
+  // 팀 그룹
   const teamGroups: Record<string, User[]> = {};
-  items.forEach((u) => {
+  users.forEach((u) => {
+    if (!userData[u.id]) return;
     const t = u.team || '미배정';
     if (!teamGroups[t]) teamGroups[t] = [];
     teamGroups[t].push(u);
   });
 
-  const pct = (n: number) => Math.round((n / 10) * 100);
+  const prevMonth = () => { if (viewMonth === 0) { setViewYear(viewYear - 1); setViewMonth(11); } else setViewMonth(viewMonth - 1); };
+  const nextMonth = () => { if (viewMonth === 11) { setViewYear(viewYear + 1); setViewMonth(0); } else setViewMonth(viewMonth + 1); };
+  const goToday = () => { setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); };
 
-  const renderBar = (u: User, isKR = false, kr?: { level: number } | null, rowH = 44) => {
-    const okr = userData[u.id].current.okr;
-    const level = isKR ? (kr?.level ?? 0) : okr.level;
-    const progress = pct(level);
-    const start = new Date(okr.startDate);
-    const end = new Date(okr.endDate);
-    const left = ((start.getTime() - minD.getTime()) / 86400000 / totalDays) * 100;
-    const width = Math.max(((end.getTime() - start.getTime()) / 86400000 / totalDays) * 100, 1);
-    const color = isKR ? '#818cf8' : teamColor(u.team);
-    const barH = isKR ? 18 : 26;
+  // 캘린더 그리드
+  const firstDay = new Date(viewYear, viewMonth, 1);
+  const lastDay = new Date(viewYear, viewMonth + 1, 0);
+  const startOffset = (firstDay.getDay() + 6) % 7;
+  const calStart = new Date(firstDay);
+  calStart.setDate(calStart.getDate() - startOffset);
 
-    return (
-      <div className="flex-1 relative flex items-center" style={{ height: rowH }}>
-        <div
-          className="absolute overflow-hidden"
-          style={{
-            left: `${left}%`,
-            width: `${width}%`,
-            height: barH,
-            borderRadius: barH,
-            background: color + '22',
-            border: `2px solid ${color}`,
-            boxSizing: 'border-box',
-          }}
-        >
-          <div
-            style={{
-              width: `${progress}%`,
-              height: '100%',
-              background: color + '99',
-              borderRadius: barH,
-            }}
-          />
-          <span
-            className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold whitespace-nowrap"
-            style={{ color }}
-          >
-            Lv.{level} ({progress}%)
-          </span>
-        </div>
-      </div>
-    );
-  };
+  const weeks: Date[][] = [];
+  const d = new Date(calStart);
+  while (d <= lastDay || weeks.length === 0 || weeks[weeks.length - 1].length < 7) {
+    if (weeks.length === 0 || weeks[weeks.length - 1].length === 7) weeks.push([]);
+    weeks[weeks.length - 1].push(new Date(d));
+    d.setDate(d.getDate() + 1);
+    if (weeks.length > 6) break;
+  }
+
+  const toStr = (dt: Date) => dt.toISOString().slice(0, 10);
+  const todayStr = toStr(today);
+  const inMonth = (dt: Date) => dt.getMonth() === viewMonth && dt.getFullYear() === viewYear;
+  const inRange = (date: string, start: string, end: string) => date >= start && date <= end;
 
   return (
     <div>
-      <h2 className="text-slate-800 font-bold text-xl mb-1">📊 간트 차트</h2>
-      <p className="text-slate-500 text-[13px] mb-5">OKR 레벨 기반 달성률 · 팀별 그룹 표시</p>
-
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        {/* Header */}
-        <div className="flex border-b-2 border-slate-200 bg-slate-50">
-          <div className="w-[220px] shrink-0 px-4 py-2.5 text-xs font-bold text-slate-500 border-r border-slate-200">
-            담당자 / OKR
-          </div>
-          <div className="flex-1 relative h-9">
-            {months.map((m, i) => {
-              const mS = new Date(Math.max(m.getTime(), minD.getTime()));
-              const mE = new Date(Math.min(new Date(m.getFullYear(), m.getMonth() + 1, 0).getTime(), maxD.getTime()));
-              const l = ((mS.getTime() - minD.getTime()) / 86400000 / totalDays) * 100;
-              const w = ((mE.getTime() - mS.getTime()) / 86400000 / totalDays) * 100;
-              return (
-                <div
-                  key={i}
-                  className="absolute h-full border-r border-dashed border-slate-200 flex items-center pl-1.5 text-[11px] text-slate-400 font-semibold"
-                  style={{ left: `${l}%`, width: `${w}%`, boxSizing: 'border-box' }}
-                >
-                  {m.getMonth() + 1}월
-                </div>
-              );
-            })}
-          </div>
+      {/* 헤더 */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5">
+        <div>
+          <h2 className="text-slate-800 font-bold text-lg md:text-xl mb-0.5">📊 간트 차트</h2>
+          <p className="text-slate-500 text-[13px]">OKR 기간 + 주간 우선순위</p>
         </div>
+        <div className="flex items-center gap-2">
+          <button onClick={prevMonth} className="w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-500 cursor-pointer hover:bg-slate-50 flex items-center justify-center text-sm">←</button>
+          <button onClick={goToday} className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 cursor-pointer hover:bg-slate-50 text-xs font-semibold">오늘</button>
+          <span className="text-base md:text-lg font-bold text-slate-800 min-w-[100px] md:min-w-[120px] text-center">{viewYear}년 {viewMonth + 1}월</span>
+          <button onClick={nextMonth} className="w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-500 cursor-pointer hover:bg-slate-50 flex items-center justify-center text-sm">→</button>
+        </div>
+      </div>
 
-        {/* Body */}
-        {Object.entries(teamGroups).map(([team, members]) => (
-          <div key={team}>
-            <div className="flex items-center border-b" style={{ background: teamColor(team) + '18', borderColor: teamColor(team) + '44' }}>
-              <div className="w-[220px] shrink-0 px-4 py-1.5 border-r border-slate-200 flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full" style={{ background: teamColor(team) }} />
-                <span className="text-xs font-bold" style={{ color: teamColor(team) }}>{team}</span>
-                <span className="text-[11px] text-slate-400">({members.length}명)</span>
+      {Object.keys(teamGroups).length === 0 && (
+        <div className="text-center py-15 text-slate-400 text-sm">데이터가 없습니다.</div>
+      )}
+
+      {Object.entries(teamGroups).map(([team, members]) => {
+        const tColor = teamColor(team);
+        return (
+          <div key={team} className="mb-8">
+            {/* 팀 헤더 + 범례 */}
+            <div className="flex items-center gap-3 mb-3 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded-full" style={{ background: tColor }} />
+                <span className="font-bold" style={{ color: tColor }}>{team}</span>
               </div>
-              <div className="flex-1" />
+              <div className="flex items-center gap-3 flex-wrap">
+                {members.map((u) => {
+                  const c = userColorMap.get(u.id) || '#64748b';
+                  return (
+                    <div key={u.id} className="flex items-center gap-1">
+                      <div className="w-3 h-3 rounded" style={{ background: c }} />
+                      <span className="text-xs text-slate-600">{u.name}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
-            {members.map((u) => {
-              const okr = userData[u.id].current.okr;
-              const krs = (okr?.krs || []).filter((k) => k.text);
-              return (
-                <div key={u.id} className="border-b border-slate-100">
-                  <div className="flex items-center min-h-12">
-                    <div className="w-[220px] shrink-0 px-4 py-1.5 border-r border-slate-100 flex items-center gap-2">
-                      <div
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                        style={{ background: teamColor(u.team) }}
-                      >
-                        {u.name[0]}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-[13px] font-bold text-slate-800">{u.name}</div>
-                        <div className="text-[10px] text-slate-500 truncate max-w-[130px]">🎯 {okr.objective}</div>
-                      </div>
-                    </div>
-                    {renderBar(u, false, null, 48)}
+            {/* 캘린더 — 모바일에서 가로 스크롤 */}
+            <div className="overflow-x-auto -mx-3 px-3 md:mx-0 md:px-0">
+              <div className="min-w-[640px]">
+                <div className="bg-white rounded-xl border border-slate-200">
+                  {/* 요일 헤더 */}
+                  <div className="grid grid-cols-7 border-b-2 border-slate-200 bg-slate-50">
+                    {DAYS.map((day) => (
+                      <div key={day} className="text-center text-xs font-semibold text-slate-500 py-2.5 border-r border-slate-100 last:border-r-0">{day}</div>
+                    ))}
                   </div>
 
-                  {krs.map((kr, i) => (
-                    <div key={kr.id} className="flex items-center min-h-8 bg-indigo-50/30">
-                      <div className="w-[220px] shrink-0 py-1 pl-13 pr-4 border-r border-slate-100 flex items-center gap-1.5">
-                        <span className="text-[10px] font-bold text-primary-light bg-indigo-100 px-1.5 py-0.5 rounded-[10px] shrink-0">KR{i + 1}</span>
-                        <span className="text-[11px] text-slate-600 truncate max-w-[110px]">{kr.text}</span>
+                  {/* 주 행 */}
+                  {weeks.map((weekDates, wi) => {
+                    const monday = toStr(weekDates[0]);
+
+                    // 이 주의 우선순위 수집 (week가 이 주 월~일 범위에 포함되는지 체크)
+                    const sundayStr = toStr(weekDates[6] || weekDates[weekDates.length - 1]);
+
+                    const weekP = members
+                      .map((u) => {
+                        const p = userData[u.id]?.current?.priorities?.find((p) => p.week >= monday && p.week <= sundayStr);
+                        return p ? { user: u, color: userColorMap.get(u.id) || '#64748b', p } : null;
+                      })
+                      .filter(Boolean) as { user: User; color: string; p: any }[];
+
+                    return (
+                      <div key={wi} className="border-b border-slate-100 last:border-b-0">
+                        {/* 날짜 행 */}
+                        <div className="grid grid-cols-7">
+                          {weekDates.map((dt) => {
+                            const dStr = toStr(dt);
+                            const im = inMonth(dt);
+                            const isToday = dStr === todayStr;
+
+                            const okrUsers = members.filter((u) => {
+                              const okr = userData[u.id]?.current?.okr;
+                              return okr?.startDate && okr?.endDate && inRange(dStr, okr.startDate, okr.endDate);
+                            });
+
+                            const markers = members.flatMap((u) => {
+                              const okr = userData[u.id]?.current?.okr;
+                              if (!okr?.startDate || !okr?.endDate) return [];
+                              const c = userColorMap.get(u.id) || '#64748b';
+                              const out = [];
+                              if (dStr === okr.startDate) out.push({ u, c, type: 'start' as const, okr });
+                              if (dStr === okr.endDate) out.push({ u, c, type: 'end' as const, okr });
+                              return out;
+                            });
+
+                            let bg = im ? '#fff' : '#fafbfc';
+                            if (okrUsers.length === 1) bg = (userColorMap.get(okrUsers[0].id) || '#64748b') + '0d';
+                            else if (okrUsers.length > 1) bg = (userColorMap.get(okrUsers[0].id) || '#64748b') + '0a';
+
+                            return (
+                              <div
+                                key={dStr}
+                                className={`border-r border-slate-100 last:border-r-0 px-1 pt-1 pb-0.5 ${isToday ? '' : ''}`}
+                                style={{ background: bg }}
+                              >
+                                <div className="flex items-center gap-0.5 flex-wrap">
+                                  <span className={`text-[12px] leading-none ${
+                                    isToday ? 'w-6 h-6 rounded-full bg-primary text-white font-bold flex items-center justify-center'
+                                    : im ? 'text-slate-800 font-medium' : 'text-slate-300'
+                                  }`}>{dt.getDate()}</span>
+                                  {/* OKR 기간 중인 유저 점 */}
+                                  {okrUsers.map((u) => (
+                                    <div key={u.id} className="w-[5px] h-[5px] rounded-full" style={{ background: userColorMap.get(u.id) || '#64748b' }} />
+                                  ))}
+                                  {markers.length > 0 && (
+                                    <div className="flex gap-0.5">
+                                      {markers.map((m, mi) => (
+                                        <div key={mi} className="group relative">
+                                          <div className="text-[8px] font-bold px-1 py-0.5 rounded cursor-default text-white" style={{ background: m.c }}>
+                                            {m.type === 'start' ? '시작' : '마감'}
+                                          </div>
+                                          <div className="hidden group-hover:block absolute right-0 bottom-full mb-1 bg-slate-800 text-slate-200 text-[11px] rounded-lg p-2.5 w-48 z-50 shadow-xl border border-slate-600 whitespace-normal">
+                                            <div className="font-bold mb-1" style={{ color: m.c }}>{m.u.name} OKR {m.type === 'start' ? '시작' : '마감'}</div>
+                                            <div>🎯 {m.okr.objective}</div>
+                                            <div className="text-slate-400 mt-1">Lv.{m.okr.level} · {m.okr.startDate} ~ {m.okr.endDate}</div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* 주간 우선순위 바 — 날짜 바로 아래, 캘린더 배경 위 */}
+                        <div className="relative grid grid-cols-7" style={{ minHeight: weekP.length > 0 ? weekP.length * 28 + 8 : 40 }}>
+                          {/* 배경 (OKR 기간 색상 이어짐) */}
+                          {weekDates.map((dt) => {
+                            const dStr = toStr(dt);
+                            const okrU = members.filter((u) => {
+                              const okr = userData[u.id]?.current?.okr;
+                              return okr?.startDate && okr?.endDate && inRange(dStr, okr.startDate, okr.endDate);
+                            });
+                            let bg = inMonth(dt) ? '#fff' : '#fafbfc';
+                            if (okrU.length >= 1) bg = (userColorMap.get(okrU[0].id) || '#64748b') + '0d';
+                            return <div key={dStr} className="border-r border-slate-100 last:border-r-0" style={{ background: bg }} />;
+                          })}
+                          {/* 바 오버레이 */}
+                          {weekP.length > 0 && (
+                            <div className="absolute inset-0 px-1 py-1 flex flex-col gap-0.5">
+                              {weekP.map(({ user: u, color: c, p }) => {
+                                const pItems = p.p1.filter(Boolean);
+                                return (
+                                  <div key={u.id} className="group relative">
+                                    <div
+                                      className="flex items-center gap-2 rounded-md px-2.5 py-1 text-[11px]"
+                                      style={{ background: c + '22', borderLeft: `3px solid ${c}` }}
+                                    >
+                                      <span className="font-bold shrink-0" style={{ color: c }}>{u.name}</span>
+                                      <div className="flex-1 flex flex-wrap items-center gap-x-2 min-w-0 text-slate-700 text-[11px]">
+                                        {pItems.map((t: string, i: number) => (
+                                          <span key={i} className="flex items-center gap-0.5">
+                                            <span className="font-bold text-indigo-500">P1</span>
+                                            <span className="truncate max-w-[120px]">{t}</span>
+                                          </span>
+                                        ))}
+                                        {p.p2 && (
+                                          <span className="flex items-center gap-0.5">
+                                            <span className="font-bold text-amber-500">P2</span>
+                                            <span className="truncate max-w-[120px]">{p.p2}</span>
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="hidden group-hover:block absolute left-0 bottom-full mb-1 bg-slate-800 text-slate-200 text-[11px] rounded-lg p-3 w-64 z-[100] shadow-xl border border-slate-600">
+                                      <div className="font-bold mb-2" style={{ color: c }}>{u.name} · {fmtDate(p.week)} 주차</div>
+                                      {p.p1.map((t: string, i: number) => t && (
+                                        <div key={i} className="flex gap-1.5 mb-1">
+                                          <span className="text-[10px] font-bold text-indigo-400 shrink-0">P1-{i + 1}</span>
+                                          <span>{t}</span>
+                                        </div>
+                                      ))}
+                                      {p.p2 && (
+                                        <div className="flex gap-1.5 mt-1">
+                                          <span className="text-[10px] font-bold text-amber-400 shrink-0">P2</span>
+                                          <span>{p.p2}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      {renderBar(u, true, kr, 32)}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            </div>
           </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }

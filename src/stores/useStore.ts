@@ -3,7 +3,7 @@ import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import type { User, UserData, UserDataMap, OKR, WeeklyPriority } from '../types';
 import { makeUserData, makeOkr, getMondayStr, getQuarter, setCustomTeamColors } from '../lib/utils';
-import { SEED_USERS, SEED_TEAMS, SEED_USER_DATA, SUPERADMIN } from '../lib/seed';
+import { SEED_USERS, SEED_TEAMS, SEED_USER_DATA, SUPERADMIN, SUPERADMIN_EMAILS } from '../lib/seed';
 import * as DB from '../lib/db';
 
 interface AppState {
@@ -26,8 +26,11 @@ interface AppState {
   // View
   activeTab: string;
   viewUserId: string | null;
+  sidebarOpen: boolean;
   setActiveTab: (tab: string) => void;
   setViewUserId: (id: string) => void;
+  setSidebarOpen: (open: boolean) => void;
+  toggleSidebar: () => void;
 
   // Toast
   toast: { msg: string; type: 'success' | 'error' } | null;
@@ -119,8 +122,9 @@ export const useStore = create<AppState>((set, get) => ({
           unsubscribe();
           if (firebaseUser?.email) {
             const email = firebaseUser.email;
-            if (email === SUPERADMIN.email) {
-              set({ currentUser: SUPERADMIN, viewUserId: SUPERADMIN.id });
+            if (SUPERADMIN_EMAILS[email]) {
+              const sa: User = { id: firebaseUser.uid, name: SUPERADMIN_EMAILS[email].name, email, team: '-', role: 'superadmin' };
+              set({ currentUser: sa, viewUserId: sa.id });
             } else {
               const matched = loadedUsers.find((u) => u.email === email);
               if (matched) {
@@ -146,6 +150,7 @@ export const useStore = create<AppState>((set, get) => ({
   userData: {},
   activeTab: 'okr',
   viewUserId: null,
+  sidebarOpen: false,
   toast: null,
 
   login: (user) => set({ currentUser: user, viewUserId: user.id }),
@@ -157,6 +162,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   setViewUserId: (id) => set({ viewUserId: id }),
+  setSidebarOpen: (open) => set({ sidebarOpen: open }),
+  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
 
   showToast: (msg, type = 'success') => {
     set({ toast: { msg, type } });

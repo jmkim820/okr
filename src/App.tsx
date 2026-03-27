@@ -9,19 +9,31 @@ import PriorityPanel from './components/weekly/PriorityPanel';
 import HistoryPanel from './components/okr/HistoryPanel';
 import GanttPanel from './components/gantt/GanttPanel';
 import TeamPanel from './components/admin/TeamPanel';
+import Dashboard from './components/admin/Dashboard';
 import Toast from './components/ui/Toast';
 
 export default function App() {
   const {
     loading, initApp,
     currentUser, users, teams, userData,
-    activeTab, viewUserId,
+    activeTab, viewUserId, setActiveTab,
     saveOkr, savePriorities, archiveQuarter,
   } = useStore();
 
   useEffect(() => {
     initApp();
   }, [initApp]);
+
+  const isSuperAdmin = currentUser?.role === 'superadmin';
+  const isAdmin = currentUser?.role === 'admin' || isSuperAdmin;
+
+  // superadmin이 본인 상태에서 OKR/priority 탭이면 dashboard로 이동
+  const viewingOther = isSuperAdmin && viewUserId && viewUserId !== currentUser?.id;
+  useEffect(() => {
+    if (isSuperAdmin && !viewingOther && (activeTab === 'okr' || activeTab === 'priority')) {
+      setActiveTab('dashboard');
+    }
+  }, [isSuperAdmin, viewingOther, activeTab, setActiveTab]);
 
   if (loading) {
     return (
@@ -33,8 +45,6 @@ export default function App() {
 
   if (!currentUser) return <LoginPage />;
 
-  const isSuperAdmin = currentUser.role === 'superadmin';
-  const isAdmin = currentUser.role === 'admin' || isSuperAdmin;
   const myTeam = currentUser.team;
 
   // superadmin/admin: 전체 열람, user: 같은 팀만 열람
@@ -67,7 +77,7 @@ export default function App() {
       <Header />
       <div className="flex" style={{ height: 'calc(100vh - 56px)' }}>
         <Sidebar />
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto p-3 md:p-6 w-full min-w-0">
           {activeTab === 'okr' && (
             <OKRPanel
               user={targetUser}
@@ -95,6 +105,9 @@ export default function App() {
           )}
           {activeTab === 'team' && isAdmin && (
             <TeamPanel users={users} teams={teams} userData={userData} />
+          )}
+          {activeTab === 'dashboard' && isSuperAdmin && (
+            <Dashboard users={users} teams={teams} userData={userData} />
           )}
         </div>
       </div>

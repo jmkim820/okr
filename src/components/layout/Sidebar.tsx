@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { useStore } from '../../stores/useStore';
-import { teamColor } from '../../lib/utils';
+import { teamColor, getMondayStr } from '../../lib/utils';
+import { SUPERADMIN_EMAILS } from '../../lib/seed';
 import TeamManager from '../admin/TeamManager';
 
 export default function Sidebar() {
   const {
-    currentUser, users, teams, viewUserId,
+    currentUser, users, teams, userData, viewUserId,
     setViewUserId, activeTab, setActiveTab,
-    addUser, removeUser, updateUser, toggleAdmin, assignTeam,
+    addUser, removeUser, updateUser, assignTeam,
+    sidebarOpen, setSidebarOpen,
   } = useStore();
 
   const [newUser, setNewUser] = useState({ name: '', email: '', team: '', role: 'user' as const });
@@ -47,37 +49,90 @@ export default function Sidebar() {
     setEditingUser(null);
   };
 
+  const handleTabClick = (tabId: string) => {
+    setActiveTab(tabId);
+    setSidebarOpen(false);
+  };
+
+  const handleUserClick = (userId: string) => {
+    setViewUserId(userId);
+    setSidebarOpen(false);
+  };
+
   const inputCls = 'w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-md px-2 py-1.5 text-xs';
 
+  const myData = userData[currentUser.id];
+  const missingThisWeek = currentUser.role !== 'superadmin' && myData
+    && !myData.current.priorities.some((p) => p.week === getMondayStr());
+
   const tabs = [
-    { id: 'okr', label: '📋 OKR 설정' },
-    { id: 'priority', label: '✅ 주간 우선순위' },
-    { id: 'history', label: '🗂 분기 히스토리' },
-    { id: 'gantt', label: '📊 간트 차트' },
-    ...(isAdmin ? [{ id: 'team', label: '👥 팀 현황' }] : []),
+    ...(isSuperAdmin ? [{ id: 'dashboard', label: '📊 대시보드', alert: false }] : []),
+    { id: 'okr', label: '📋 OKR 설정', alert: false },
+    { id: 'priority', label: '✅ 주간 우선순위', alert: !!missingThisWeek && !isSuperAdmin },
+    { id: 'history', label: '🗂 분기 히스토리', alert: false },
+    { id: 'gantt', label: '📅 간트 차트', alert: false },
+    ...(isAdmin ? [{ id: 'team', label: '👥 팀 현황', alert: false }] : []),
   ];
 
-  return (
-    <div className="w-[230px] bg-sidebar border-r border-slate-700 flex flex-col py-4 overflow-y-auto shrink-0">
+  const sidebarContent = (
+    <div className="w-[230px] bg-sidebar border-r border-slate-700 flex flex-col py-4 overflow-y-auto shrink-0 h-full">
       {/* Navigation */}
       <div className="px-3 mb-3">
         {tabs.map((t) => (
           <button
             key={t.id}
-            onClick={() => setActiveTab(t.id)}
+            onClick={() => handleTabClick(t.id)}
             className={`w-full text-left px-3 py-2 rounded-lg border-none cursor-pointer text-[13px] mb-0.5 transition-colors ${
               activeTab === t.id
                 ? 'bg-sidebar-hover text-slate-200 font-semibold'
                 : 'bg-transparent text-slate-400 hover:bg-slate-700/50'
             }`}
           >
-            {t.label}
+            <span className="flex items-center justify-between">
+              {t.label}
+              {t.alert && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
+            </span>
           </button>
         ))}
       </div>
 
       {/* Team Manager — superadmin 전용 */}
       {isSuperAdmin && <TeamManager />}
+
+      {/* 운영진 목록 — 대표 / 이사 구분 */}
+      {(() => {
+        const entries = Object.entries(SUPERADMIN_EMAILS);
+        const ceo = entries.filter(([, v]) => v.title === '대표');
+        const directors = entries.filter(([, v]) => v.title === '이사');
+
+        const renderPerson = ([email, info]: [string, { name: string; title: string }]) => (
+          <div key={email} className="mx-2 rounded-lg py-1.5 px-2 flex items-center gap-1.5">
+            <div className="w-[26px] h-[26px] rounded-full bg-primary flex items-center justify-center text-[11px] font-bold text-white shrink-0">
+              {info.name[0]}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold text-slate-200 truncate">{info.name}</div>
+            </div>
+          </div>
+        );
+
+        return (
+          <>
+            {ceo.length > 0 && (
+              <>
+                <div className="border-t border-slate-700 pt-2.5 px-3 pb-1 text-[11px] text-slate-600 font-bold tracking-wider">👑 대표</div>
+                {ceo.map(renderPerson)}
+              </>
+            )}
+            {directors.length > 0 && (
+              <>
+                <div className="border-t border-slate-700 pt-2.5 px-3 pb-1 text-[11px] text-slate-600 font-bold tracking-wider">🧑‍💼 이사</div>
+                {directors.map(renderPerson)}
+              </>
+            )}
+          </>
+        );
+      })()}
 
       {/* User List Header */}
       <div className="border-t border-slate-700 pt-2.5 px-3 pb-1 text-[11px] text-slate-600 font-bold tracking-wider">
@@ -122,7 +177,7 @@ export default function Sidebar() {
             className={`mx-2 rounded-lg transition-colors ${
               canAccess ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'
             } ${viewUserId === u.id ? 'bg-sidebar-hover' : canAccess ? 'hover:bg-slate-700/30' : ''}`}
-            onClick={() => canAccess && setViewUserId(u.id)}
+            onClick={() => canAccess && handleUserClick(u.id)}
           >
             {editingUser?.id === u.id ? (
               <div className="p-2 bg-slate-900 rounded-lg" onClick={(e) => e.stopPropagation()}>
@@ -168,7 +223,6 @@ export default function Sidebar() {
                 {isSuperAdmin && (
                   <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
                     <button title="정보 수정" onClick={() => setEditingUser({ ...u })} className="bg-transparent border-none text-slate-400 cursor-pointer text-xs px-0.5">⚙️</button>
-                    <button title={u.role === 'admin' ? '관리자 해제' : '관리자 지정'} onClick={() => toggleAdmin(u.id)} className={`bg-transparent border-none cursor-pointer text-xs px-0.5 ${u.role === 'admin' ? 'opacity-100' : 'opacity-30'}`}>🧑‍💼</button>
                     <button onClick={() => removeUser(u.id)} className="bg-transparent border-none text-red-500 cursor-pointer text-[13px] px-0.5">×</button>
                   </div>
                 )}
@@ -200,12 +254,10 @@ export default function Sidebar() {
                 <option value="">팀 선택</option>
                 {teams.map((t) => <option key={t}>{t}</option>)}
               </select>
-              {isSuperAdmin && (
-                <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value as any })} className={`${inputCls} mt-1`}>
-                  <option value="user">일반 사용자</option>
-                  <option value="admin">관리자</option>
-                </select>
-              )}
+              <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value as any })} className={`${inputCls} mt-1`}>
+                <option value="user">일반 사용자</option>
+                <option value="admin">관리자</option>
+              </select>
               <div className="flex gap-1 mt-1.5">
                 <button onClick={handleAddUser} className="flex-1 bg-primary text-white border-none rounded-md py-1.5 cursor-pointer text-xs">추가</button>
                 <button onClick={() => setShowAdd(false)} className="flex-1 bg-sidebar-hover text-slate-400 border-none rounded-md py-1.5 cursor-pointer text-xs">취소</button>
@@ -249,5 +301,29 @@ export default function Sidebar() {
         </div>
       )}
     </div>
+  );
+
+  return (
+    <>
+      {/* 데스크탑: 항상 표시 */}
+      <div className="hidden md:block">
+        {sidebarContent}
+      </div>
+
+      {/* 모바일: 오버레이 */}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 z-[900]">
+          {/* 배경 오버레이 */}
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setSidebarOpen(false)}
+          />
+          {/* 사이드바 */}
+          <div className="relative z-[901] h-full">
+            {sidebarContent}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

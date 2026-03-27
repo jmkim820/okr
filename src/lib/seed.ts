@@ -1,5 +1,12 @@
 import type { User, UserDataMap } from '../types';
 
+export const SUPERADMIN_EMAILS: Record<string, { name: string; title: '대표' | '이사' }> = {
+  'ceo@axissoft.co.kr': { name: '박경근', title: '대표' },
+  'wsbyun@axissoft.co.kr': { name: '변원섭', title: '이사' },
+  'minsoo@axissoft.co.kr': { name: '김민수', title: '이사' },
+  'jmkim@starplayer.net': { name: '테스트', title: '이사' },
+};
+
 export const SUPERADMIN: User = {
   id: 'sa',
   name: '변원섭',

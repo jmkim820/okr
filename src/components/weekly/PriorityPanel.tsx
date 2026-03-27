@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { User, UserData, WeeklyPriority } from '../../types';
 import { getMondayStr, fmtDate } from '../../lib/utils';
+import { useStore } from '../../stores/useStore';
 import HelpBubble from '../ui/HelpBubble';
 
 interface Props {
@@ -13,15 +14,27 @@ interface Props {
 const inputCls = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-[13px] text-slate-800 bg-white outline-none focus:border-primary transition-colors';
 const btnSec = 'bg-white border border-slate-200 text-slate-500 rounded-md px-3 py-1 cursor-pointer text-xs hover:bg-slate-50 transition-colors';
 
+// 날짜를 해당 주의 월요일로 변환
+const toMonday = (dateStr: string): string => {
+  const d = new Date(dateStr);
+  const day = d.getDay();
+  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  return d.toISOString().slice(0, 10);
+};
+
 export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
   const [list, setList] = useState<WeeklyPriority[]>(data.current.priorities);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<WeeklyPriority | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addDate, setAddDate] = useState(getMondayStr());
   const krs = data.current.okr?.krs || [];
+  const showToast = useStore((s) => s.showToast);
 
   useEffect(() => {
     setList(data.current.priorities);
     setEditing(null);
+    setShowAddForm(false);
   }, [user.id, data.current.priorities]);
 
   const startEdit = (row: WeeklyPriority) => {
@@ -30,14 +43,19 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
   };
 
   const addWeek = () => {
-    const week = getMondayStr();
-    if (list.find((r) => r.week === week)) return;
+    const week = toMonday(addDate);
+    if (list.find((r) => r.week === week)) {
+      showToast(`${fmtDate(week)} 주차가 이미 등록되어 있습니다.`, 'error');
+      return;
+    }
     const prev = list.length > 0 ? list[list.length - 1] : null;
     const row: WeeklyPriority = prev
       ? { week, p1: [...prev.p1] as [string, string, string], p2: prev.p2, krTags: [...prev.krTags] as [string, string, string], note: '' }
       : { week, p1: ['', '', ''], p2: '', krTags: ['', '', ''], note: '' };
-    const updated = [...list, row];
+    const updated = [...list, row].sort((a, b) => a.week.localeCompare(b.week));
     setList(updated);
+    setShowAddForm(false);
+    setAddDate(getMondayStr());
     startEdit(row);
   };
 
@@ -57,25 +75,78 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-5">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-5">
         <div>
-          <h2 className="text-slate-800 font-bold text-xl mb-0.5 flex items-center gap-2">
+          <h2 className="text-slate-800 font-bold text-lg md:text-xl mb-0.5 flex items-center gap-2">
             {user.name}의 주간 우선순위
             <HelpBubble text={`(Priority)\n\nP1 반드시 실행해야 하는 일\n     최대 3가지만 기재\n\nP2 언제나 할 일\n     중요한 것 1가지만 기재`} />
           </h2>
           <p className="text-slate-500 text-[13px]">매주 월요일 기준으로 입력합니다.</p>
         </div>
-        {canEdit && (
+        {canEdit && !showAddForm && (
           <button
-            onClick={addWeek}
-            className="bg-primary text-white border-none rounded-lg px-4 py-2 cursor-pointer font-semibold text-[13px] hover:bg-primary-dark transition-colors"
+            onClick={() => setShowAddForm(true)}
+            className="bg-primary text-white border-none rounded-lg px-4 py-2 cursor-pointer font-semibold text-[13px] hover:bg-primary-dark transition-colors shrink-0"
           >
-            + 이번 주 추가
+            + 추가
           </button>
         )}
       </div>
 
-      {list.length === 0 && (
+      {/* 이번 주 미등록 알림 */}
+      {canEdit && !list.some((r) => r.week === getMondayStr()) && (
+        <div className="bg-red-50 border border-red-300 rounded-xl px-4 py-3 mb-4 flex items-center gap-2 text-sm text-red-700">
+          <span className="text-base">⚠️</span>
+          <span className="font-semibold">이번 주 우선순위가 아직 등록되지 않았습니다.</span>
+        </div>
+      )}
+
+      {/* 주간 선택 폼 */}
+      {showAddForm && (() => {
+        // 과거 8주 ~ 미래 4주 범위의 월요일 목록 생성
+        const weeks: string[] = [];
+        const today = new Date();
+        for (let i = -8; i <= 4; i++) {
+          const d = new Date(today);
+          d.setDate(d.getDate() + i * 7);
+          const mon = toMonday(d.toISOString().slice(0, 10));
+          if (!weeks.includes(mon)) weeks.push(mon);
+        }
+        const existing = new Set(list.map((r) => r.week));
+
+        return (
+          <div className="bg-white rounded-xl border border-slate-200 mb-4 p-4 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <label className="text-sm text-slate-600 font-semibold shrink-0">주간 선택</label>
+            <select
+              value={addDate}
+              onChange={(e) => setAddDate(e.target.value)}
+              className={`${inputCls} sm:!w-[200px]`}
+            >
+              {weeks.map((w) => (
+                <option key={w} value={w} disabled={existing.has(w)}>
+                  {fmtDate(w)} 주차{w === getMondayStr() ? ' (이번 주)' : ''}{existing.has(w) ? ' — 등록됨' : ''}
+                </option>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <button
+                onClick={addWeek}
+                className="flex-1 sm:flex-none bg-primary text-white border-none rounded-lg px-4 py-2 cursor-pointer font-semibold text-[13px] hover:bg-primary-dark transition-colors shrink-0"
+              >
+                추가
+              </button>
+              <button
+                onClick={() => { setShowAddForm(false); setAddDate(getMondayStr()); }}
+                className={`flex-1 sm:flex-none ${btnSec} shrink-0`}
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {list.length === 0 && !showAddForm && (
         <div className="text-center py-15 text-slate-400 text-sm">등록된 항목이 없습니다.</div>
       )}
 
@@ -103,8 +174,8 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
             {editing === row.week && draft ? (
               <div>
                 {[0, 1, 2].map((i) => (
-                  <div key={i} className="flex gap-2 items-center mb-2">
-                    <span className="w-8 text-xs font-bold text-white bg-primary rounded-md px-1.5 py-0.5 text-center shrink-0">P1</span>
+                  <div key={i} className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center mb-2">
+                    <span className="w-8 text-xs font-bold text-white bg-primary rounded-md px-1.5 py-0.5 text-center shrink-0 self-start sm:self-center">P1</span>
                     <input
                       value={draft.p1[i]}
                       onChange={(e) => {
@@ -122,7 +193,7 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
                         a[i] = e.target.value;
                         setDraft({ ...draft, krTags: a });
                       }}
-                      className={`${inputCls} !w-[90px] text-xs`}
+                      className={`${inputCls} sm:!w-[90px] text-xs`}
                     >
                       <option value="">KR 연결</option>
                       {krs.filter((k) => k.text).map((k) => (
@@ -131,8 +202,8 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
                     </select>
                   </div>
                 ))}
-                <div className="flex gap-2 items-center mb-2">
-                  <span className="w-8 text-xs font-bold text-white bg-amber-500 rounded-md px-1.5 py-0.5 text-center shrink-0">P2</span>
+                <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center mb-2">
+                  <span className="w-8 text-xs font-bold text-white bg-amber-500 rounded-md px-1.5 py-0.5 text-center shrink-0 self-start sm:self-center">P2</span>
                   <input
                     value={draft.p2}
                     onChange={(e) => setDraft({ ...draft, p2: e.target.value })}
@@ -140,8 +211,8 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
                     className={`flex-1 ${inputCls}`}
                   />
                 </div>
-                <div className="flex gap-2 items-center">
-                  <span className="w-8 text-xs text-slate-500 text-center shrink-0">📝</span>
+                <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                  <span className="w-8 text-xs text-slate-500 text-center shrink-0 self-start sm:self-center">📝</span>
                   <input
                     value={draft.note}
                     onChange={(e) => setDraft({ ...draft, note: e.target.value })}
@@ -157,7 +228,7 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
                     📋 이전 분기에서 복사된 항목입니다. 검토 후 수정하세요.
                   </div>
                 )}
-                <div className="grid grid-cols-3 gap-2 mb-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
                   {row.p1.map((t, i) =>
                     t ? (
                       <div key={i} className="bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-2">

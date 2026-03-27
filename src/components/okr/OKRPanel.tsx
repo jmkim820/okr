@@ -34,15 +34,15 @@ export default function OKRPanel({ user, data, onSaveOkr, onArchive }: Props) {
 
   return (
     <div className="max-w-[720px]">
-      <div className="flex justify-between items-start mb-1">
+      <div className="flex flex-col sm:flex-row justify-between items-start gap-2 mb-1">
         <div>
-          <h2 className="text-slate-800 font-bold text-xl mb-0.5">{user.name}의 OKR</h2>
+          <h2 className="text-slate-800 font-bold text-lg md:text-xl mb-0.5">{user.name}의 OKR</h2>
           <p className="text-slate-500 text-[13px]">
             {readOnly ? 'OKR 현황을 확인합니다.' : 'Objective와 Key Results를 설정하세요.'}
           </p>
         </div>
         {ended && onArchive && (
-          <div className="bg-amber-50 border border-amber-300 rounded-[10px] px-3.5 py-2 text-xs text-amber-800 text-right">
+          <div className="bg-amber-50 border border-amber-300 rounded-[10px] px-3.5 py-2 text-xs text-amber-800 text-right shrink-0">
             <div className="font-bold mb-1">⚠️ 분기가 종료되었습니다</div>
             <button
               onClick={onArchive}
@@ -62,7 +62,7 @@ export default function OKRPanel({ user, data, onSaveOkr, onArchive }: Props) {
           </span>
         }
       >
-        <div className="flex gap-3 items-start">
+        <div className="flex flex-col sm:flex-row gap-3 items-start">
           <input
             value={form.objective}
             onChange={(e) => setForm((p) => ({ ...p, objective: e.target.value }))}
@@ -70,7 +70,7 @@ export default function OKRPanel({ user, data, onSaveOkr, onArchive }: Props) {
             disabled={readOnly}
             className={`flex-1 ${cls}`}
           />
-          <div className="flex flex-col items-center">
+          <div className="flex flex-col items-center shrink-0">
             <label className="text-[11px] text-slate-500 mb-1 font-semibold">현수준</label>
             <input
               type="number"
@@ -84,7 +84,7 @@ export default function OKRPanel({ user, data, onSaveOkr, onArchive }: Props) {
             />
           </div>
         </div>
-        <div className="flex gap-3 mt-3">
+        <div className="flex flex-col sm:flex-row gap-3 mt-3">
           <div className="flex-1">
             <label className="text-[11px] text-slate-500 block mb-1 font-semibold">시작일</label>
             <input
@@ -132,14 +132,14 @@ export default function OKRPanel({ user, data, onSaveOkr, onArchive }: Props) {
       >
         {form.krs.map((kr, i) => (
           <div key={kr.id} className={i < 2 ? 'mb-3' : ''}>
-            <div className="flex gap-2 items-center mb-1.5">
+            <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center mb-1.5">
               <span className="w-10 text-center text-[13px] font-bold text-primary shrink-0">KR{i + 1}</span>
               <input
                 value={kr.text}
                 onChange={(e) => setKr(i, 'text', e.target.value)}
                 placeholder={`KR${i + 1} 제목 입력...`}
                 disabled={readOnly}
-                className={`flex-1 ${cls} font-semibold`}
+                className={`flex-1 w-full ${cls} font-semibold`}
               />
               <div className="flex flex-col items-center shrink-0">
                 <span className="text-[10px] text-slate-400 mb-0.5">현수준</span>
@@ -155,7 +155,7 @@ export default function OKRPanel({ user, data, onSaveOkr, onArchive }: Props) {
                 />
               </div>
             </div>
-            <div className="pl-12">
+            <div className="sm:pl-12">
               <textarea
                 value={kr.detail || ''}
                 onChange={(e) => setKr(i, 'detail', e.target.value)}
@@ -172,7 +172,7 @@ export default function OKRPanel({ user, data, onSaveOkr, onArchive }: Props) {
       {onSaveOkr && (
         <button
           onClick={() => onSaveOkr(form)}
-          className="mt-4 bg-primary text-white border-none rounded-lg px-7 py-2.5 cursor-pointer font-semibold text-sm hover:bg-primary-dark transition-colors"
+          className="mt-4 w-full sm:w-auto bg-primary text-white border-none rounded-lg px-7 py-2.5 cursor-pointer font-semibold text-sm hover:bg-primary-dark transition-colors"
         >
           저장
         </button>

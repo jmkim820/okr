@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { signInWithPopup, signOut } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import { useStore } from '../stores/useStore';
-import { SUPERADMIN, ALLOWED_DOMAINS } from '../lib/seed';
+import { SUPERADMIN_EMAILS, ALLOWED_DOMAINS } from '../lib/seed';
 import type { User } from '../types';
 
 export default function LoginPage() {
@@ -25,8 +25,15 @@ export default function LoginPage() {
           return;
         }
 
-        if (gEmail === SUPERADMIN.email) {
-          login(SUPERADMIN);
+        // superadmin 체크
+        if (SUPERADMIN_EMAILS[gEmail]) {
+          login({
+            id: result.user.uid,
+            name: SUPERADMIN_EMAILS[gEmail].name,
+            email: gEmail,
+            team: '-',
+            role: 'superadmin',
+          });
           return;
         }
 
