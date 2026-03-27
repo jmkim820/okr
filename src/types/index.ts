@@ -7,6 +7,7 @@ export interface User {
   team: string;
   role: Role;
   pw?: string;
+  joinDate?: string; // 입사일 (YYYY-MM-DD)
 }
 
 export interface KeyResult {
@@ -48,4 +49,23 @@ export interface UserData {
 
 export interface UserDataMap {
   [userId: string]: UserData;
+}
+
+export interface LeaveRequest {
+  id: string;
+  userId: string;
+  year: number;
+  month: number;
+  days: string; // "5, 6, 15" 형태
+  amount: number; // 사용 일수 (0.5 단위)
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requestedAt: string;
+  approvedBy: string | null;
+}
+
+export interface LeaveAllocation {
+  userId: string;
+  year: number;
+  total: number; // 연간 발생휴가 일수
 }

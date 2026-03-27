@@ -8,8 +8,8 @@ import OKRPanel from './components/okr/OKRPanel';
 import PriorityPanel from './components/weekly/PriorityPanel';
 import HistoryPanel from './components/okr/HistoryPanel';
 import GanttPanel from './components/gantt/GanttPanel';
-import TeamPanel from './components/admin/TeamPanel';
 import Dashboard from './components/admin/Dashboard';
+import LeavePanel from './components/leave/LeavePanel';
 import Toast from './components/ui/Toast';
 
 export default function App() {
@@ -103,11 +103,11 @@ export default function App() {
               userData={userData}
             />
           )}
-          {activeTab === 'team' && isAdmin && (
-            <TeamPanel users={users} teams={teams} userData={userData} />
-          )}
           {activeTab === 'dashboard' && isSuperAdmin && (
             <Dashboard users={users} teams={teams} userData={userData} />
+          )}
+          {activeTab === 'leave' && (
+            <LeavePanel />
           )}
         </div>
       </div>

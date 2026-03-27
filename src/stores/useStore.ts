@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import type { User, UserData, UserDataMap, OKR, WeeklyPriority } from '../types';
+import type { User, UserData, UserDataMap, OKR, WeeklyPriority, LeaveRequest, LeaveAllocation } from '../types';
 import { makeUserData, makeOkr, getMondayStr, getQuarter, setCustomTeamColors } from '../lib/utils';
 import { SEED_USERS, SEED_TEAMS, SEED_USER_DATA, SUPERADMIN, SUPERADMIN_EMAILS } from '../lib/seed';
 import * as DB from '../lib/db';
@@ -55,6 +55,18 @@ interface AppState {
   savePriorities: (userId: string, priorities: WeeklyPriority[]) => void;
   archiveQuarter: (userId: string) => void;
 
+  // Leave
+  leaveRequests: LeaveRequest[];
+  leaveAllocations: LeaveAllocation[];
+  addLeaveRequest: (req: LeaveRequest) => void;
+  approveLeave: (id: string, approvedBy: string) => void;
+  rejectLeave: (id: string) => void;
+  deleteLeaveRequest: (id: string) => void;
+  setLeaveAllocation: (userId: string, year: number, total: number) => void;
+
+  // Bulk leave allocation
+  batchSetLeaveAllocations: (year: number, allocations: { userId: string; total: number }[]) => void;
+
   // Helpers
   getTargetData: (userId: string) => UserData;
   getSuperAdmin: () => User;
@@ -95,11 +107,13 @@ export const useStore = create<AppState>((set, get) => ({
 
     try {
       // Firestore에서 데이터 로드
-      const [users, teams, teamColors, userData] = await Promise.all([
+      const [users, teams, teamColors, userData, leaveRequests, leaveAllocations] = await Promise.all([
         DB.loadUsers(),
         DB.loadTeams(),
         DB.loadTeamColors(),
         DB.loadAllUserData(),
+        DB.loadLeaveRequests(),
+        DB.loadLeaveAllocations(),
       ]);
 
       let loadedUsers = users;
@@ -114,7 +128,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       setCustomTeamColors(teamColors);
-      set({ users: loadedUsers, teams: loadedTeams, teamColors, userData: loadedUserData });
+      set({ users: loadedUsers, teams: loadedTeams, teamColors, userData: loadedUserData, leaveRequests, leaveAllocations });
 
       // Firebase Auth 세션 확인 → 자동 로그인
       await new Promise<void>((resolve) => {
@@ -172,7 +186,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   addUser: (data) => {
     const id = 'u' + Date.now();
-    const newUser = { ...data, id } as User;
+    const newUser = { ...data, id, joinDate: new Date().toISOString().slice(0, 10) } as User;
     set((s) => ({
       users: [...s.users, newUser],
       userData: { ...s.userData, [id]: makeUserData() },
@@ -184,12 +198,13 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   registerUser: (user) => {
+    const withJoinDate = { ...user, joinDate: user.joinDate || new Date().toISOString().slice(0, 10) };
     set((s) => ({
-      users: [...s.users, user],
-      userData: { ...s.userData, [user.id]: makeUserData() },
+      users: [...s.users, withJoinDate],
+      userData: { ...s.userData, [withJoinDate.id]: makeUserData() },
     }));
-    DB.saveUser(user).catch(console.error);
-    persistUserData(user.id, makeUserData());
+    DB.saveUser(withJoinDate).catch(console.error);
+    persistUserData(withJoinDate.id, makeUserData());
   },
 
   removeUser: (id) => {
@@ -325,6 +340,75 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({ userData: { ...s.userData, [userId]: updated } }));
     persistUserData(userId, updated);
     showToast(`분기가 보관되었습니다.`);
+  },
+
+  // ── Leave ──────────────────────────────────────────────
+  leaveRequests: [],
+  leaveAllocations: [],
+
+  addLeaveRequest: (req) => {
+    set((s) => ({ leaveRequests: [...s.leaveRequests, req] }));
+    DB.saveLeaveRequest(req).catch(console.error);
+    get().showToast('휴가 신청 완료');
+  },
+
+  approveLeave: (id, approvedBy) => {
+    set((s) => ({
+      leaveRequests: s.leaveRequests.map((r) =>
+        r.id === id ? { ...r, status: 'approved' as const, approvedBy } : r,
+      ),
+    }));
+    const updated = get().leaveRequests.find((r) => r.id === id);
+    if (updated) DB.saveLeaveRequest(updated).catch(console.error);
+    get().showToast('휴가 승인 완료');
+  },
+
+  rejectLeave: (id) => {
+    set((s) => ({
+      leaveRequests: s.leaveRequests.map((r) =>
+        r.id === id ? { ...r, status: 'rejected' as const } : r,
+      ),
+    }));
+    const updated = get().leaveRequests.find((r) => r.id === id);
+    if (updated) DB.saveLeaveRequest(updated).catch(console.error);
+    get().showToast('휴가 반려 완료', 'error');
+  },
+
+  deleteLeaveRequest: (id) => {
+    set((s) => ({ leaveRequests: s.leaveRequests.filter((r) => r.id !== id) }));
+    if (DB.isFirestoreEnabled()) DB.deleteLeaveRequest(id).catch(console.error);
+    get().showToast('휴가 신청 삭제', 'error');
+  },
+
+  setLeaveAllocation: (userId, year, total) => {
+    set((s) => {
+      const exists = s.leaveAllocations.find((a) => a.userId === userId && a.year === year);
+      const updated = exists
+        ? s.leaveAllocations.map((a) => (a.userId === userId && a.year === year ? { ...a, total } : a))
+        : [...s.leaveAllocations, { userId, year, total }];
+      return { leaveAllocations: updated };
+    });
+    const alloc = { userId, year, total };
+    DB.saveLeaveAllocation(alloc).catch(console.error);
+    get().showToast('연차 할당 수정 완료');
+  },
+
+  batchSetLeaveAllocations: (year, allocations) => {
+    set((s) => {
+      let updated = [...s.leaveAllocations];
+      for (const { userId, total } of allocations) {
+        const idx = updated.findIndex((a) => a.userId === userId && a.year === year);
+        if (idx >= 0) {
+          updated[idx] = { ...updated[idx], total };
+        } else {
+          updated.push({ userId, year, total });
+        }
+        const alloc = { userId, year, total };
+        DB.saveLeaveAllocation(alloc).catch(console.error);
+      }
+      return { leaveAllocations: updated };
+    });
+    get().showToast(`${year}년 발생휴가 일괄 설정 완료`);
   },
 
   getTargetData: (userId) => {

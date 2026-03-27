@@ -1,5 +1,5 @@
 import type { User, UserDataMap } from '../../types';
-import { teamColor, levelColor } from '../../lib/utils';
+import { roleColor, levelColor } from '../../lib/utils';
 import Card from '../ui/Card';
 
 interface Props {
@@ -32,7 +32,7 @@ export default function TeamPanel({ users, teams, userData }: Props) {
                     <div className="flex items-center gap-2 mb-2.5">
                       <div
                         className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-white"
-                        style={{ background: u.role === 'admin' ? '#8b5cf6' : teamColor(team) }}
+                        style={{ background: roleColor(u.role) }}
                       >
                         {u.name[0]}
                       </div>

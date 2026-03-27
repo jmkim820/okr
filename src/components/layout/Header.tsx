@@ -1,5 +1,5 @@
 import { useStore } from '../../stores/useStore';
-import { teamColor } from '../../lib/utils';
+import { roleColor } from '../../lib/utils';
 
 export default function Header() {
   const currentUser = useStore((s) => s.currentUser);
@@ -32,7 +32,7 @@ export default function Header() {
         <span
           className="text-[12px] md:text-[13px] px-2 md:px-2.5 py-0.5 rounded-[20px] font-semibold"
           style={{
-            background: isSuperAdmin ? '#6366f1' : isAdmin ? '#8b5cf6' : teamColor(currentUser.team),
+            background: roleColor(currentUser.role),
           }}
         >
           {currentUser.name} {isSuperAdmin ? '👑' : isAdmin ? '🧑‍💼' : ''}

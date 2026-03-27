@@ -28,6 +28,10 @@ export const setCustomTeamColors = (colors: Record<string, string>) => {
 export const teamColor = (t: string): string =>
   _customColors[t] || DEFAULT_TEAM_COLORS[t] || DEFAULT_TEAM_COLOR;
 
+// 역할별 아바타 색상
+export const roleColor = (role: string): string =>
+  role === 'superadmin' ? '#8b5cf6' : role === 'admin' ? '#22c55e' : '#f59e0b';
+
 export const levelColor = (n: number): string =>
   n >= 8 ? '#22c55e' : n >= 5 ? '#f59e0b' : '#ef4444';
 

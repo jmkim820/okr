@@ -3,7 +3,7 @@ import {
   collection, writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { User, UserData, UserDataMap } from '../types';
+import type { User, UserData, UserDataMap, LeaveRequest, LeaveAllocation } from '../types';
 
 // ── Firestore 활성화 여부 ────────────────────────────────
 // .env에 projectId가 없으면 인메모리 모드(시드 데이터)로 동작
@@ -14,6 +14,8 @@ export const isFirestoreEnabled = (): boolean =>
 const USERS_COL = 'okr_users';
 const TEAMS_DOC = 'okr_config/teams';
 const USER_DATA_COL = 'okr_userData';
+const LEAVES_COL = 'okr_leaves';
+const LEAVE_ALLOC_COL = 'okr_leaveAllocations';
 
 // ── Users ────────────────────────────────────────────────
 export async function loadUsers(): Promise<User[]> {
@@ -66,6 +68,32 @@ export async function loadAllUserData(): Promise<UserDataMap> {
 
 export async function saveUserData(userId: string, data: UserData): Promise<void> {
   await setDoc(doc(db, USER_DATA_COL, userId), data);
+}
+
+// ── Leave Requests ──────────────────────────────────────
+export async function loadLeaveRequests(): Promise<LeaveRequest[]> {
+  const snap = await getDocs(collection(db, LEAVES_COL));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as LeaveRequest);
+}
+
+export async function saveLeaveRequest(req: LeaveRequest): Promise<void> {
+  const { id, ...data } = req;
+  await setDoc(doc(db, LEAVES_COL, id), data);
+}
+
+export async function deleteLeaveRequest(id: string): Promise<void> {
+  await deleteDoc(doc(db, LEAVES_COL, id));
+}
+
+// ── Leave Allocations ───────────────────────────────────
+export async function loadLeaveAllocations(): Promise<LeaveAllocation[]> {
+  const snap = await getDocs(collection(db, LEAVE_ALLOC_COL));
+  return snap.docs.map((d) => d.data() as LeaveAllocation);
+}
+
+export async function saveLeaveAllocation(alloc: LeaveAllocation): Promise<void> {
+  const docId = `${alloc.userId}_${alloc.year}`;
+  await setDoc(doc(db, LEAVE_ALLOC_COL, docId), alloc);
 }
 
 // ── 시드 데이터 일괄 업로드 ──────────────────────────────

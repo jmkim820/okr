@@ -1,5 +1,5 @@
 import type { User, UserDataMap } from '../../types';
-import { teamColor, levelColor, getMondayStr, fmtDate } from '../../lib/utils';
+import { roleColor, levelColor, getMondayStr, fmtDate } from '../../lib/utils';
 import Card from '../ui/Card';
 
 interface Props {
@@ -72,8 +72,8 @@ export default function Dashboard({ users, teams, userData }: Props) {
         {teamStats.map(({ team, members, avg, weekDone }) => (
           <div key={team} className="bg-white rounded-xl border border-slate-200 p-4">
             <div className="flex items-center gap-2 mb-3">
-              <div className="w-3 h-3 rounded-full" style={{ background: teamColor(team) }} />
-              <span className="font-bold text-sm" style={{ color: teamColor(team) }}>{team}</span>
+              <div className="w-3 h-3 rounded-full" style={{ background: '#64748b' }} />
+              <span className="font-bold text-sm" style={{ color: '#64748b' }}>{team}</span>
               <span className="text-xs text-slate-400">{members}명</span>
             </div>
             <div className="flex justify-between items-end">
@@ -107,14 +107,14 @@ export default function Dashboard({ users, teams, userData }: Props) {
                 return (
                   <div key={team}>
                     <div className="flex items-center gap-1 mb-1">
-                      <div className="w-2 h-2 rounded-full" style={{ background: teamColor(team) }} />
-                      <span className="text-[11px] font-bold" style={{ color: teamColor(team) }}>{team}</span>
+                      <div className="w-2 h-2 rounded-full" style={{ background: '#64748b' }} />
+                      <span className="text-[11px] font-bold" style={{ color: '#64748b' }}>{team}</span>
                     </div>
                     {members.map((u) => (
                       <div key={u.id} className="flex items-center gap-2 text-sm ml-3 mb-1">
                         <div
                           className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                          style={{ background: teamColor(u.team) }}
+                          style={{ background: roleColor(u.role) }}
                         >
                           {u.name[0]}
                         </div>
@@ -152,7 +152,7 @@ export default function Dashboard({ users, teams, userData }: Props) {
                 <div key={u.id} className="flex items-start gap-2">
                   <div
                     className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5"
-                    style={{ background: teamColor(u.team) }}
+                    style={{ background: roleColor(u.role) }}
                   >
                     {u.name[0]}
                   </div>
@@ -203,7 +203,7 @@ export default function Dashboard({ users, teams, userData }: Props) {
                           {u.name} {u.role === 'admin' && <span className="text-[10px]">🧑‍💼</span>}
                         </td>
                         <td className="py-2 px-2">
-                          <span className="text-[11px] font-semibold" style={{ color: teamColor(u.team) }}>{u.team}</span>
+                          <span className="text-[11px] font-semibold" style={{ color: '#64748b' }}>{u.team}</span>
                         </td>
                         <td className="py-2 px-2 text-slate-600 max-w-[200px] truncate">{okr?.objective || <span className="text-slate-300">미설정</span>}</td>
                         <td className="py-2 px-2 text-center">

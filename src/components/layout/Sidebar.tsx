@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../../stores/useStore';
-import { teamColor, getMondayStr } from '../../lib/utils';
+import { roleColor, getMondayStr } from '../../lib/utils';
 import { SUPERADMIN_EMAILS } from '../../lib/seed';
 import TeamManager from '../admin/TeamManager';
 
@@ -65,13 +65,22 @@ export default function Sidebar() {
   const missingThisWeek = currentUser.role !== 'superadmin' && myData
     && !myData.current.priorities.some((p) => p.week === getMondayStr());
 
+  const leaveRequests = useStore((s) => s.leaveRequests);
+  const pendingLeaveCount = (() => {
+    if (isSuperAdmin) return leaveRequests.filter((r) => r.status === 'pending').length;
+    if (isAdmin) {
+      const teamUserIds = users.filter((u) => u.team === currentUser.team).map((u) => u.id);
+      return leaveRequests.filter((r) => r.status === 'pending' && teamUserIds.includes(r.userId)).length;
+    }
+    return 0;
+  })();
+
   const tabs = [
-    ...(isSuperAdmin ? [{ id: 'dashboard', label: '📊 대시보드', alert: false }] : []),
-    { id: 'okr', label: '📋 OKR 설정', alert: false },
-    { id: 'priority', label: '✅ 주간 우선순위', alert: !!missingThisWeek && !isSuperAdmin },
-    { id: 'history', label: '🗂 분기 히스토리', alert: false },
-    { id: 'gantt', label: '📅 간트 차트', alert: false },
-    ...(isAdmin ? [{ id: 'team', label: '👥 팀 현황', alert: false }] : []),
+    ...(isSuperAdmin ? [{ id: 'dashboard', label: '📊 대시보드', alert: false, special: false }] : []),
+    { id: 'okr', label: '📋 OKR 설정', alert: false, special: false },
+    { id: 'priority', label: '✅ 주간 우선순위', alert: !!missingThisWeek && !isSuperAdmin, special: false },
+    { id: 'gantt', label: '📅 간트 차트', alert: false, special: false },
+    { id: 'history', label: '🗂 분기 히스토리', alert: false, special: false },
   ];
 
   const sidebarContent = (
@@ -83,14 +92,24 @@ export default function Sidebar() {
             key={t.id}
             onClick={() => handleTabClick(t.id)}
             className={`w-full text-left px-3 py-2 rounded-lg border-none cursor-pointer text-[13px] mb-0.5 transition-colors ${
-              activeTab === t.id
-                ? 'bg-sidebar-hover text-slate-200 font-semibold'
-                : 'bg-transparent text-slate-400 hover:bg-slate-700/50'
+              t.special
+                ? activeTab === t.id
+                  ? 'bg-red-600 text-white font-semibold'
+                  : 'bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                : activeTab === t.id
+                  ? 'bg-sidebar-hover text-slate-200 font-semibold'
+                  : 'bg-transparent text-slate-400 hover:bg-slate-700/50'
             }`}
           >
             <span className="flex items-center justify-between">
               {t.label}
-              {t.alert && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
+              {t.alert && (
+                <span className={`shrink-0 rounded-full text-white text-[10px] font-bold flex items-center justify-center ${
+                  t.special ? 'bg-white text-red-600 w-5 h-5' : 'bg-red-500 w-2 h-2'
+                }`}>
+                  {t.special && pendingLeaveCount > 0 ? pendingLeaveCount : ''}
+                </span>
+              )}
             </span>
           </button>
         ))}
@@ -99,40 +118,19 @@ export default function Sidebar() {
       {/* Team Manager — superadmin 전용 */}
       {isSuperAdmin && <TeamManager />}
 
-      {/* 운영진 목록 — 대표 / 이사 구분 */}
-      {(() => {
-        const entries = Object.entries(SUPERADMIN_EMAILS);
-        const ceo = entries.filter(([, v]) => v.title === '대표');
-        const directors = entries.filter(([, v]) => v.title === '이사');
-
-        const renderPerson = ([email, info]: [string, { name: string; title: string }]) => (
-          <div key={email} className="mx-2 rounded-lg py-1.5 px-2 flex items-center gap-1.5">
-            <div className="w-[26px] h-[26px] rounded-full bg-primary flex items-center justify-center text-[11px] font-bold text-white shrink-0">
-              {info.name[0]}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold text-slate-200 truncate">{info.name}</div>
-            </div>
+      {/* 경영진 목록 */}
+      <div className="border-t border-slate-700 pt-2.5 px-3 pb-1 text-[11px] text-slate-600 font-bold tracking-wider">👑 경영진</div>
+      {Object.entries(SUPERADMIN_EMAILS).map(([email, info]) => (
+        <div key={email} className="mx-2 rounded-lg py-1.5 px-2 flex items-center gap-1.5">
+          <div className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style={{ background: roleColor('superadmin') }}>
+            {info.name[0]}
           </div>
-        );
-
-        return (
-          <>
-            {ceo.length > 0 && (
-              <>
-                <div className="border-t border-slate-700 pt-2.5 px-3 pb-1 text-[11px] text-slate-600 font-bold tracking-wider">👑 대표</div>
-                {ceo.map(renderPerson)}
-              </>
-            )}
-            {directors.length > 0 && (
-              <>
-                <div className="border-t border-slate-700 pt-2.5 px-3 pb-1 text-[11px] text-slate-600 font-bold tracking-wider">🧑‍💼 이사</div>
-                {directors.map(renderPerson)}
-              </>
-            )}
-          </>
-        );
-      })()}
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold text-slate-200 truncate">{info.name}</div>
+          </div>
+          <span className="text-[10px] text-slate-500">{info.title}</span>
+        </div>
+      ))}
 
       {/* User List Header */}
       <div className="border-t border-slate-700 pt-2.5 px-3 pb-1 text-[11px] text-slate-600 font-bold tracking-wider">
@@ -187,6 +185,7 @@ export default function Sidebar() {
                   <option value="">팀 선택</option>
                   {teams.map((t) => <option key={t}>{t}</option>)}
                 </select>
+                <input type="date" value={editingUser.joinDate || ''} onChange={(e) => setEditingUser({ ...editingUser, joinDate: e.target.value })} className={`${inputCls} mb-1`} title="입사일" />
                 {isSuperAdmin && (
                   <select value={editingUser.role} onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })} className={`${inputCls} mb-1.5`}>
                     <option value="user">일반 사용자</option>
@@ -211,7 +210,7 @@ export default function Sidebar() {
                 )}
                 <div
                   className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0"
-                  style={{ background: u.role === 'admin' ? '#8b5cf6' : teamColor(u.team) }}
+                  style={{ background: roleColor(u.role) }}
                 >
                   {u.name[0]}
                 </div>
@@ -234,8 +233,8 @@ export default function Sidebar() {
         return orderedTeams.map((team) => (
           <div key={team} className="mb-1">
             <div className="flex items-center gap-1.5 px-3 pt-2 pb-1">
-              <div className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: teamColor(team) }} />
-              <span className="text-[11px] font-bold tracking-wider" style={{ color: teamColor(team) }}>{team}</span>
+              <div className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: '#64748b' }} />
+              <span className="text-[11px] font-bold tracking-wider" style={{ color: '#64748b' }}>{team}</span>
               <span className="text-[10px] text-slate-600">{teamGroups[team].length}</span>
             </div>
             {teamGroups[team].map(renderUser)}
@@ -270,6 +269,25 @@ export default function Sidebar() {
           )}
         </div>
       )}
+
+      {/* 휴가관리 버튼 */}
+      <div className="px-3 pt-2">
+        <button
+          onClick={() => handleTabClick('leave')}
+          className={`w-full text-left px-3 py-2 rounded-lg border-none cursor-pointer text-[13px] transition-colors flex items-center justify-between ${
+            activeTab === 'leave'
+              ? 'bg-red-600 text-white font-semibold'
+              : 'bg-red-500/10 text-red-400 hover:bg-red-500/20'
+          }`}
+        >
+          🏖️ 휴가관리
+          {pendingLeaveCount > 0 && (
+            <span className="w-5 h-5 rounded-full bg-white text-red-600 text-[10px] font-bold flex items-center justify-center shrink-0">
+              {pendingLeaveCount}
+            </span>
+          )}
+        </button>
+      </div>
 
       {/* Team assign modal */}
       {isSuperAdmin && showTeamModal && (
