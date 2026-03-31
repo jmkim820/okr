@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { User, UserData, WeeklyPriority } from '../../types';
-import { getMondayStr, fmtDate } from '../../lib/utils';
+import { getMondayStr, fmtWeek } from '../../lib/utils';
 import { useStore } from '../../stores/useStore';
 import HelpBubble from '../ui/HelpBubble';
 
@@ -45,7 +45,7 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
   const addWeek = () => {
     const week = toMonday(addDate);
     if (list.find((r) => r.week === week)) {
-      showToast(`${fmtDate(week)} 주차가 이미 등록되어 있습니다.`, 'error');
+      showToast(`${fmtWeek(week)} 주차가 이미 등록되어 있습니다.`, 'error');
       return;
     }
     const prev = list.length > 0 ? list[list.length - 1] : null;
@@ -124,7 +124,7 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
             >
               {weeks.map((w) => (
                 <option key={w} value={w} disabled={existing.has(w)}>
-                  {fmtDate(w)} 주차{w === getMondayStr() ? ' (이번 주)' : ''}{existing.has(w) ? ' — 등록됨' : ''}
+                  {fmtWeek(w)} 주차{w === getMondayStr() ? ' (이번 주)' : ''}{existing.has(w) ? ' — 등록됨' : ''}
                 </option>
               ))}
             </select>
@@ -153,7 +153,7 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
       {[...list].reverse().map((row) => (
         <div key={row.week} className="bg-white rounded-xl border border-slate-200 mb-3 overflow-hidden shadow-sm">
           <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex justify-between items-center">
-            <span className="font-bold text-slate-700 text-sm">📅 {fmtDate(row.week)} 주차</span>
+            <span className="font-bold text-slate-700 text-sm">📅 {fmtWeek(row.week)}</span>
             <div className="flex gap-1.5">
               {canEdit && editing !== row.week && (
                 <>

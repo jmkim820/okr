@@ -1,5 +1,5 @@
 import type { User, UserDataMap } from '../../types';
-import { roleColor, levelColor, getMondayStr, fmtDate } from '../../lib/utils';
+import { roleColor, levelColor, getMondayStr, fmtWeek } from '../../lib/utils';
 import Card from '../ui/Card';
 
 interface Props {
@@ -45,7 +45,7 @@ export default function Dashboard({ users, teams, userData }: Props) {
   return (
     <div>
       <h2 className="text-slate-800 font-bold text-lg md:text-xl mb-1">📊 대시보드</h2>
-      <p className="text-slate-500 text-[13px] mb-5">전체 OKR 현황 · {fmtDate(thisMonday)} 주차 기준</p>
+      <p className="text-slate-500 text-[13px] mb-5">전체 OKR 현황 · {fmtWeek(thisMonday)} 기준</p>
 
       {/* 요약 카드 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">

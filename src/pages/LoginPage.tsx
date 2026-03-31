@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { signInWithPopup, signOut } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import { useStore } from '../stores/useStore';
-import { SUPERADMIN_EMAILS, ALLOWED_DOMAINS } from '../lib/seed';
+import { ALLOWED_DOMAINS } from '../lib/seed';
 import type { User } from '../types';
 
 export default function LoginPage() {
@@ -25,24 +25,14 @@ export default function LoginPage() {
           return;
         }
 
-        // superadmin 체크
-        if (SUPERADMIN_EMAILS[gEmail]) {
-          login({
-            id: result.user.uid,
-            name: SUPERADMIN_EMAILS[gEmail].name,
-            email: gEmail,
-            team: '-',
-            role: 'superadmin',
-          });
-          return;
-        }
-
+        // 기존 사용자 매칭
         const matched = users.find((u) => u.email === gEmail);
         if (matched) {
           login(matched);
           return;
         }
 
+        // 신규 사용자 등록 (role은 DB에서 관리, 신규는 항상 user)
         const newUser: User = {
           id: result.user.uid,
           name: gName,
@@ -67,7 +57,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
       <div className="bg-sidebar rounded-2xl p-10 w-[380px] shadow-2xl">
         <div className="text-center mb-8">
-          <div className="text-[28px] font-extrabold text-primary-light">◆ Axissoft</div>
+          <div className="text-[28px] font-extrabold text-primary-light flex items-center justify-center gap-2"><img src="/logo.png" alt="logo" className="w-9 h-9" /> Axissoft</div>
           <div className="text-slate-400 text-sm mt-1.5">OKR 관리 시스템</div>
         </div>
 

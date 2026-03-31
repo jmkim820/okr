@@ -22,7 +22,7 @@ export default function Header() {
         >
           ☰
         </button>
-        <span className="text-lg font-bold text-primary-light">◆ Axissoft</span>
+        <span className="text-lg font-bold text-primary-light flex items-center gap-1.5"><img src="/logo.png" alt="logo" className="w-6 h-6" /> Axissoft</span>
         <span className="text-[13px] text-slate-400 hidden sm:inline">OKR 관리</span>
         <span className="text-[11px] bg-slate-700 text-slate-500 px-2 py-0.5 rounded-[10px] hidden sm:inline">
           💾 자동저장

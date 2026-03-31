@@ -10,7 +10,9 @@ export default function LeavePanel() {
   const {
     currentUser, users,
     leaveRequests, leaveAllocations,
-    addLeaveRequest, approveLeave, rejectLeave, deleteLeaveRequest,
+    addLeaveRequest, updateLeaveRequest,
+    approveLeave, rejectLeave, deleteLeaveRequest,
+    requestEditLeave, requestDeleteLeave, approveEditRequest, approveDeleteRequest,
     setLeaveAllocation, batchSetLeaveAllocations, showToast,
   } = useStore();
 
@@ -22,12 +24,22 @@ export default function LeavePanel() {
   const [showBatchAllocModal, setShowBatchAllocModal] = useState(false);
   const [editAllocUserId, setEditAllocUserId] = useState<string | null>(null);
   const [editAllocValue, setEditAllocValue] = useState('');
+  const [editingLeave, setEditingLeave] = useState<{ id: string; year: number; month: number; reason: string; dates: Map<string, 'full' | 'am' | 'pm'>; calYear: number; calMonth: number } | null>(null);
 
   // New request form
-  const [reqMonth, setReqMonth] = useState(now.getMonth() + 1);
-  const [reqDays, setReqDays] = useState('');
-  const [reqAmount, setReqAmount] = useState('1');
+  const [reqTargetUserId, setReqTargetUserId] = useState('');
+  const [reqCalYear, setReqCalYear] = useState(now.getFullYear());
+  const [reqCalMonth, setReqCalMonth] = useState(now.getMonth()); // 0-based for Date
+  // key: 'YYYY-MM-DD', value: 'full' | 'am' | 'pm'
+  const [reqSelectedDates, setReqSelectedDates] = useState<Map<string, 'full' | 'am' | 'pm'>>(new Map());
   const [reqReason, setReqReason] = useState('');
+
+  // 자동 계산: 연차=1, 반차=0.5
+  const reqTotalAmount = useMemo(() => {
+    let total = 0;
+    reqSelectedDates.forEach((type) => { total += type === 'full' ? 1 : 0.5; });
+    return total;
+  }, [reqSelectedDates]);
 
   // Batch allocation form
   const [batchYear, setBatchYear] = useState(now.getFullYear() + 1);
@@ -40,8 +52,8 @@ export default function LeavePanel() {
 
   // Visible users based on role
   const visibleUsers = useMemo(() => {
-    if (isSuperAdmin) return users;
-    if (isAdmin) return users.filter((u) => u.team === currentUser.team);
+    if (isSuperAdmin) return users.filter((u) => u.role !== 'superadmin');
+    if (isAdmin) return users.filter((u) => u.team === currentUser.team && u.role !== 'superadmin');
     return users.filter((u) => u.id === currentUser.id);
   }, [users, currentUser, isSuperAdmin, isAdmin]);
 
@@ -59,23 +71,67 @@ export default function LeavePanel() {
     [leaveRequests, selectedYear],
   );
 
-  // 신규 사용자 월별 발생휴가 계산 (1달 만근 시 1일씩 추가)
-  const getProratedAllocation = (userId: string, year: number): number => {
+  // 입사일로부터 기준일까지 만근 월수 (월차 누적 계산용)
+  const getAccruedMonths = (joinDate: Date, refDate: Date): number => {
+    let months = (refDate.getFullYear() - joinDate.getFullYear()) * 12
+               + (refDate.getMonth() - joinDate.getMonth());
+    if (refDate.getDate() < joinDate.getDate()) months--;
+    return Math.max(0, months);
+  };
+
+  // 발생휴가 자동 계산
+  // - 월차: 입사일 기준 매월 1일씩. 현재 시점 기준 실제 발생분만 표시
+  // - 연차: 입사 1주년 이후 첫 1/1부터 15일, 근속 2년 이상 16일, 이후 2년마다 +1일 (최대 25일)
+  const getDefaultAllocation = (userId: string, year: number): number => {
     const user = users.find((u) => u.id === userId);
-    if (!user?.joinDate) return 15; // 입사일 없으면 기본값
-    const joinYear = parseInt(user.joinDate.slice(0, 4));
-    const joinMonth = parseInt(user.joinDate.slice(5, 7));
-    if (joinYear < year) return 15; // 입사 연도 이전이면 기본값
-    if (joinYear > year) return 0; // 입사 연도 이후면 0
-    // 입사 연도와 같으면 프로레이션: 입사월 이후 만근 월 수
-    const monthsWorked = 12 - joinMonth; // 입사월 다음달부터 카운트 (1달 만근 후)
-    return Math.max(0, monthsWorked);
+    if (!user?.joinDate) return 15;
+
+    const join = new Date(user.joinDate);
+    const joinYear = join.getFullYear();
+    const joinMonth = join.getMonth();
+
+    // 1년 기념일
+    const anniversary = new Date(joinYear + 1, joinMonth, join.getDate());
+
+    // 연차 시작: 1년 기념일 이후 첫 1월 1일
+    const jan1OfAnnivYear = new Date(anniversary.getFullYear(), 0, 1);
+    const annualStartYear = jan1OfAnnivYear >= anniversary ? anniversary.getFullYear() : anniversary.getFullYear() + 1;
+
+    if (year < joinYear) return 0;
+
+    if (year < annualStartYear) {
+      // 월차 기간: 현재 시점 기준으로 실제 발생분 계산
+      const today = new Date();
+      const currentYear = today.getFullYear();
+
+      // 기준일: 과거 연도면 12/31, 올해면 오늘, 미래면 12/31(예상)
+      const refDate = year < currentYear
+        ? new Date(year, 11, 31)
+        : year === currentYear
+          ? today
+          : new Date(year, 11, 31);
+
+      // 전년도 말 기준 누적
+      const prevEnd = year > joinYear ? new Date(year - 1, 11, 31) : join;
+      const accruedToRef = getAccruedMonths(join, refDate);
+      const accruedToPrev = year > joinYear ? getAccruedMonths(join, prevEnd) : 0;
+
+      return Math.max(0, accruedToRef - accruedToPrev);
+    }
+
+    // 연차: 해당 연도 1/1 기준 근속연수
+    const jan1 = new Date(year, 0, 1);
+    const diffMs = jan1.getTime() - join.getTime();
+    const fullYears = Math.floor(diffMs / (365.25 * 24 * 60 * 60 * 1000));
+
+    if (fullYears < 2) return 15;
+    return Math.min(25, 16 + Math.floor((fullYears - 2) / 2));
   };
 
   const getAllocation = (userId: string) => {
     const alloc = leaveAllocations.find((a) => a.userId === userId && a.year === selectedYear);
     if (alloc) return alloc.total; // 수동 설정된 값 우선
-    return getProratedAllocation(userId, selectedYear);
+    return getDefaultAllocation(userId, selectedYear);
   };
 
   const getUsedDays = (userId: string) =>
@@ -94,13 +150,26 @@ export default function LeavePanel() {
   // 승인 체계: 팀원→팀장/경영진 승인, 팀장→경영진만 승인 (자기 승인 방지)
   const pendingLeaves = useMemo(() => {
     if (isSuperAdmin) {
-      // 경영진: 전체 대기 건 (본인 제외)
       return yearLeaves.filter((r) => r.status === 'pending' && r.userId !== currentUser.id);
     }
     if (currentUser.role === 'admin') {
-      // 팀장: 같은 팀 팀원(user)의 대기 건만 (본인 제외, 다른 admin 제외)
       return yearLeaves.filter((r) => {
         if (r.status !== 'pending' || r.userId === currentUser.id) return false;
+        const reqUser = users.find((u) => u.id === r.userId);
+        return reqUser?.team === currentUser.team && reqUser?.role === 'user';
+      });
+    }
+    return [];
+  }, [yearLeaves, isSuperAdmin, currentUser, users]);
+
+  // 수정/삭제 요청 건 (관리자용)
+  const changeRequests = useMemo(() => {
+    if (isSuperAdmin) {
+      return yearLeaves.filter((r) => (r.editRequested || r.deleteRequested) && r.userId !== currentUser.id);
+    }
+    if (currentUser.role === 'admin') {
+      return yearLeaves.filter((r) => {
+        if (!(r.editRequested || r.deleteRequested) || r.userId === currentUser.id) return false;
         const reqUser = users.find((u) => u.id === r.userId);
         return reqUser?.team === currentUser.team && reqUser?.role === 'user';
       });
@@ -124,32 +193,55 @@ export default function LeavePanel() {
   const isArchived = selectedYear < now.getFullYear();
 
   const handleSubmitRequest = () => {
-    const days = reqDays.trim();
-    const amount = parseFloat(reqAmount);
-    if (!days) { showToast('날짜를 입력해주세요.', 'error'); return; }
-    if (isNaN(amount) || amount <= 0) { showToast('사용 일수를 올바르게 입력해주세요.', 'error'); return; }
-    if (amount % 0.5 !== 0) { showToast('사용 일수는 0.5 단위로 입력해주세요.', 'error'); return; }
+    if (reqSelectedDates.size === 0) { showToast('날짜를 선택해주세요.', 'error'); return; }
 
-    const req: LeaveRequest = {
-      id: 'lv' + Date.now(),
-      userId: currentUser.id,
-      year: selectedYear,
-      month: reqMonth,
-      days,
-      amount,
-      reason: reqReason.trim(),
-      status: 'pending',
-      requestedAt: new Date().toISOString(),
-      approvedBy: null,
-    };
-    addLeaveRequest(req);
+    const targetId = (isSuperAdmin && reqTargetUserId) ? reqTargetUserId : currentUser.id;
+    const isByProxy = isSuperAdmin && targetId !== currentUser.id;
+
+    // 선택된 날짜를 월별로 그룹핑
+    const byMonth: Record<number, { day: string; type: 'full' | 'am' | 'pm'; year: number }[]> = {};
+    const sorted = [...reqSelectedDates.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    for (const [dateKey, type] of sorted) {
+      const yr = parseInt(dateKey.slice(0, 4));
+      const month = parseInt(dateKey.slice(5, 7));
+      const day = dateKey.slice(8, 10);
+      if (!byMonth[month]) byMonth[month] = [];
+      byMonth[month].push({ day, type, year: yr });
+    }
+
+    for (const [monthStr, entries] of Object.entries(byMonth)) {
+      const typeLabel = (t: 'full' | 'am' | 'pm') => t === 'full' ? '' : t === 'am' ? '(오전)' : '(오후)';
+      const daysStr = entries.map((e) => `${parseInt(e.day)}${typeLabel(e.type)}`).join(', ');
+      const monthAmount = entries.reduce((s, e) => s + (e.type === 'full' ? 1 : 0.5), 0);
+
+      const req: LeaveRequest = {
+        id: 'lv' + Date.now() + '_' + monthStr,
+        userId: targetId,
+        year: entries[0].year,
+        month: parseInt(monthStr),
+        days: daysStr,
+        amount: monthAmount,
+        reason: reqReason.trim(),
+        status: isByProxy ? 'approved' : 'pending',
+        requestedAt: new Date().toISOString(),
+        approvedBy: isByProxy ? currentUser.id : null,
+        approvedByName: isByProxy ? `${currentUser.name} (경영진)` : null,
+      };
+      addLeaveRequest(req);
+    }
+
     setShowRequestModal(false);
-    setReqDays('');
-    setReqAmount('1');
+    setReqTargetUserId('');
+    setReqSelectedDates(new Map());
     setReqReason('');
   };
 
-  const getUserName = (id: string) => users.find((u) => u.id === id)?.name || id;
+  const getUserName = (id: string) => {
+    const user = users.find((u) => u.id === id);
+    if (user) return user.name;
+    if (currentUser && currentUser.id === id) return currentUser.name;
+    return id;
+  };
 
   const handleExportExcel = () => {
     const rows = filteredUsers.map((u) => {
@@ -157,8 +249,6 @@ export default function LeavePanel() {
       const used = getUsedDays(u.id);
       const row: Record<string, string | number> = {
         '이름': u.name,
-        '팀': u.team,
-        '직급': u.role === 'admin' ? '관리자' : '팀원',
         '입사일': u.joinDate || '-',
         '발생휴가': alloc,
         '사용일': used,
@@ -197,7 +287,7 @@ export default function LeavePanel() {
     const vals: Record<string, string> = {};
     users.forEach((u) => {
       const existing = leaveAllocations.find((a) => a.userId === u.id && a.year === batchYear);
-      vals[u.id] = String(existing?.total ?? getProratedAllocation(u.id, batchYear));
+      vals[u.id] = String(existing?.total ?? getDefaultAllocation(u.id, batchYear));
     });
     setBatchValues(vals);
     setShowBatchAllocModal(true);
@@ -212,9 +302,17 @@ export default function LeavePanel() {
     setShowBatchAllocModal(false);
   };
 
+  // Tooltip state
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; r: LeaveRequest } | null>(null);
+
+  const handleCellMouseEnter = (e: React.MouseEvent, r: LeaveRequest) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTooltip({ x: rect.left + rect.width / 2, y: rect.bottom + 4, r });
+  };
+
   // Month cell renderer
   const renderMonthCell = (userId: string, month: number) => {
-    const leaves = getMonthLeaves(userId, month);
+    const leaves = getMonthLeaves(userId, month).filter((r) => r.status !== 'rejected');
     if (leaves.length === 0) return <span className="text-slate-300">-</span>;
 
     return (
@@ -222,13 +320,12 @@ export default function LeavePanel() {
         {leaves.map((r) => (
           <span
             key={r.id}
-            title={`${r.days}일 (${r.amount}일) ${r.reason} [${r.status === 'approved' ? '승인' : r.status === 'pending' ? '대기' : '반려'}]`}
+            onMouseEnter={(e) => handleCellMouseEnter(e, r)}
+            onMouseLeave={() => setTooltip(null)}
             className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold cursor-default ${
               r.status === 'approved'
                 ? 'bg-blue-100 text-blue-700'
-                : r.status === 'pending'
-                  ? 'bg-red-100 text-red-600'
-                  : 'bg-slate-100 text-slate-400 line-through'
+                : 'bg-red-100 text-red-600'
             }`}
           >
             {r.amount}
@@ -322,27 +419,64 @@ export default function LeavePanel() {
                       <td className="py-2 px-2 text-slate-600">{r.reason || '-'}</td>
                       <td className="py-2 px-2 text-center">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                          r.editAllowed ? 'bg-green-100 text-green-700' :
                           r.status === 'approved' ? 'bg-blue-100 text-blue-700' :
                           r.status === 'pending' ? 'bg-red-100 text-red-600' :
                           'bg-slate-100 text-slate-500'
                         }`}>
-                          {r.status === 'approved' ? '승인' : r.status === 'pending' ? '대기' : '반려'}
+                          {r.editAllowed ? '수정 허용됨' : r.status === 'approved' ? '승인' : r.status === 'pending' ? '대기' : '반려'}
                         </span>
                       </td>
                       <td className="py-2 px-2 text-center text-slate-400 text-xs">
-                        {r.approvedBy ? getUserName(r.approvedBy) : '-'}
+                        {r.approvedByName || (r.approvedBy ? getUserName(r.approvedBy) : '-')}
                       </td>
                       <td className="py-2 px-2 text-center text-slate-400 text-xs">
                         {r.requestedAt.slice(0, 10)}
                       </td>
                       <td className="py-2 px-2 text-center">
-                        {r.status === 'pending' && !isArchived && (
-                          <button
-                            onClick={() => deleteLeaveRequest(r.id)}
-                            className="text-red-500 bg-transparent border-none cursor-pointer text-xs hover:text-red-700"
-                          >
-                            취소
-                          </button>
+                        {!isArchived && (
+                          <div className="flex gap-1 justify-center">
+                            {r.status === 'pending' && (
+                              <>
+                                <button onClick={() => {
+                                  // days 문자열을 Map으로 파싱
+                                  const dates = new Map<string, 'full' | 'am' | 'pm'>();
+                                  const pad = (n: number) => String(n).padStart(2, '0');
+                                  r.days.split(',').map((s) => s.trim()).forEach((s) => {
+                                    const dayNum = parseInt(s);
+                                    if (isNaN(dayNum)) return;
+                                    const type: 'full' | 'am' | 'pm' = s.includes('오전') ? 'am' : s.includes('오후') ? 'pm' : 'full';
+                                    const key = `${r.year}-${pad(r.month)}-${pad(dayNum)}`;
+                                    dates.set(key, type);
+                                  });
+                                  setEditingLeave({ id: r.id, year: r.year, month: r.month, reason: r.reason, dates, calYear: r.year, calMonth: r.month - 1 });
+                                }} className="text-blue-500 bg-transparent border-none cursor-pointer text-xs hover:text-blue-700">수정</button>
+                                <button onClick={() => deleteLeaveRequest(r.id)} className="text-red-500 bg-transparent border-none cursor-pointer text-xs hover:text-red-700">삭제</button>
+                              </>
+                            )}
+                            {r.status === 'approved' && r.editAllowed && (
+                              <button onClick={() => {
+                                const dates = new Map<string, 'full' | 'am' | 'pm'>();
+                                const pad3 = (n: number) => String(n).padStart(2, '0');
+                                r.days.split(',').map((s) => s.trim()).forEach((s) => {
+                                  const dayNum = parseInt(s);
+                                  if (isNaN(dayNum)) return;
+                                  const type: 'full' | 'am' | 'pm' = s.includes('오전') ? 'am' : s.includes('오후') ? 'pm' : 'full';
+                                  dates.set(`${r.year}-${pad3(r.month)}-${pad3(dayNum)}`, type);
+                                });
+                                setEditingLeave({ id: r.id, year: r.year, month: r.month, reason: r.reason, dates, calYear: r.year, calMonth: r.month - 1 });
+                              }} className="text-green-600 bg-transparent border-none cursor-pointer text-xs font-semibold hover:text-green-800">수정하기</button>
+                            )}
+                            {r.status === 'approved' && !r.editAllowed && !r.editRequested && !r.deleteRequested && (
+                              <>
+                                <button onClick={() => requestEditLeave(r.id)} className="text-blue-500 bg-transparent border-none cursor-pointer text-xs hover:text-blue-700">수정요청</button>
+                                <button onClick={() => requestDeleteLeave(r.id)} className="text-red-500 bg-transparent border-none cursor-pointer text-xs hover:text-red-700">삭제요청</button>
+                              </>
+                            )}
+                            {r.editRequested && <span className="text-[10px] text-orange-500 font-semibold">수정 요청중</span>}
+                            {r.editAllowed && <span className="text-[10px] text-green-600 font-semibold ml-1">수정 허용됨</span>}
+                            {r.deleteRequested && <span className="text-[10px] text-red-500 font-semibold">삭제 요청중</span>}
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -355,6 +489,7 @@ export default function LeavePanel() {
 
         {/* Request Modal */}
         {showRequestModal && renderRequestModal()}
+        {editingLeave && renderEditModal()}
       </div>
     );
   }
@@ -410,14 +545,14 @@ export default function LeavePanel() {
               + 휴가 신청
             </button>
           )}
-          {pendingLeaves.length > 0 && (
+          {(pendingLeaves.length + changeRequests.length) > 0 && (
             <button
               onClick={() => setShowPendingModal(true)}
               className="relative bg-orange-500 text-white border-none rounded-lg px-4 py-1.5 text-sm font-semibold cursor-pointer hover:bg-orange-600 transition-colors"
             >
-              승인 대기
+              처리 대기
               <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                {pendingLeaves.length}
+                {pendingLeaves.length + changeRequests.length}
               </span>
             </button>
           )}
@@ -451,7 +586,6 @@ export default function LeavePanel() {
             <thead>
               <tr className="border-b-2 border-slate-200 text-slate-500 text-xs">
                 <th className="text-left py-2 px-2 font-medium sticky left-0 bg-white z-10">이름</th>
-                <th className="text-left py-2 px-2 font-medium">팀</th>
                 <th className="text-center py-2 px-2 font-medium">입사일</th>
                 <th className="text-center py-2 px-2 font-medium">발생</th>
                 <th className="text-center py-2 px-2 font-medium">사용</th>
@@ -468,11 +602,7 @@ export default function LeavePanel() {
                 const remaining = alloc - used;
                 return (
                   <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="py-2 px-2 font-semibold text-slate-800 sticky left-0 bg-white z-10">
-                      {u.name}
-                      {u.role === 'admin' && <span className="ml-1 text-[10px] text-green-600">관리자</span>}
-                    </td>
-                    <td className="py-2 px-2 text-slate-500">{u.team}</td>
+                    <td className="py-2 px-2 font-semibold text-slate-800 sticky left-0 bg-white z-10">{u.name}</td>
                     <td className="py-2 px-2 text-center text-slate-400 text-xs">{u.joinDate || '-'}</td>
                     <td className="py-2 px-2 text-center">
                       {editAllocUserId === u.id ? (
@@ -515,10 +645,123 @@ export default function LeavePanel() {
         </div>
       </Card>
 
+      {/* 내 휴가 신청 내역 (관리자 본인) */}
+      {(() => {
+        const myLeaves = yearLeaves.filter((r) => r.userId === currentUser.id);
+        if (myLeaves.length === 0 && isArchived) return null;
+        return (
+          <Card title="내 휴가 신청 내역">
+            {myLeaves.length === 0 ? (
+              <div className="text-center text-slate-400 py-6 text-sm">신청 내역이 없습니다.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-500 text-xs">
+                      <th className="text-left py-2 px-2 font-medium">월</th>
+                      <th className="text-left py-2 px-2 font-medium">날짜</th>
+                      <th className="text-center py-2 px-2 font-medium">일수</th>
+                      <th className="text-left py-2 px-2 font-medium">사유</th>
+                      <th className="text-center py-2 px-2 font-medium">상태</th>
+                      <th className="text-center py-2 px-2 font-medium">승인자</th>
+                      <th className="text-center py-2 px-2 font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {myLeaves
+                      .sort((a, b) => b.month - a.month || b.requestedAt.localeCompare(a.requestedAt))
+                      .map((r) => (
+                      <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50">
+                        <td className="py-2 px-2">{r.month}월</td>
+                        <td className="py-2 px-2">{r.days}일</td>
+                        <td className="py-2 px-2 text-center">{r.amount}</td>
+                        <td className="py-2 px-2 text-slate-600">{r.reason || '-'}</td>
+                        <td className="py-2 px-2 text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                            r.status === 'approved' ? 'bg-blue-100 text-blue-700' :
+                            r.status === 'pending' ? 'bg-red-100 text-red-600' :
+                            'bg-slate-100 text-slate-500'
+                          }`}>
+                            {r.status === 'approved' ? '승인' : r.status === 'pending' ? '대기' : '반려'}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-center text-slate-400 text-xs">
+                          {r.approvedByName || (r.approvedBy ? getUserName(r.approvedBy) : '-')}
+                        </td>
+                        <td className="py-2 px-2 text-center">
+                          {!isArchived && (
+                            <div className="flex gap-1 justify-center">
+                              {r.status === 'pending' && (
+                                <>
+                                  <button onClick={() => {
+                                    const dates = new Map<string, 'full' | 'am' | 'pm'>();
+                                    const pad2 = (n: number) => String(n).padStart(2, '0');
+                                    r.days.split(',').map((s) => s.trim()).forEach((s) => {
+                                      const dayNum = parseInt(s);
+                                      if (isNaN(dayNum)) return;
+                                      const type: 'full' | 'am' | 'pm' = s.includes('오전') ? 'am' : s.includes('오후') ? 'pm' : 'full';
+                                      dates.set(`${r.year}-${pad2(r.month)}-${pad2(dayNum)}`, type);
+                                    });
+                                    setEditingLeave({ id: r.id, year: r.year, month: r.month, reason: r.reason, dates, calYear: r.year, calMonth: r.month - 1 });
+                                  }} className="text-blue-500 bg-transparent border-none cursor-pointer text-xs hover:text-blue-700">수정</button>
+                                  <button onClick={() => deleteLeaveRequest(r.id)} className="text-red-500 bg-transparent border-none cursor-pointer text-xs hover:text-red-700">삭제</button>
+                                </>
+                              )}
+                              {r.status === 'approved' && (
+                                <>
+                                  <button onClick={() => {
+                                    const dates = new Map<string, 'full' | 'am' | 'pm'>();
+                                    const pad2 = (n: number) => String(n).padStart(2, '0');
+                                    r.days.split(',').map((s) => s.trim()).forEach((s) => {
+                                      const dayNum = parseInt(s);
+                                      if (isNaN(dayNum)) return;
+                                      const type: 'full' | 'am' | 'pm' = s.includes('오전') ? 'am' : s.includes('오후') ? 'pm' : 'full';
+                                      dates.set(`${r.year}-${pad2(r.month)}-${pad2(dayNum)}`, type);
+                                    });
+                                    setEditingLeave({ id: r.id, year: r.year, month: r.month, reason: r.reason, dates, calYear: r.year, calMonth: r.month - 1 });
+                                  }} className="text-blue-500 bg-transparent border-none cursor-pointer text-xs hover:text-blue-700">수정</button>
+                                  <button onClick={() => deleteLeaveRequest(r.id)} className="text-red-500 bg-transparent border-none cursor-pointer text-xs hover:text-red-700">삭제</button>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        );
+      })()}
+
       {/* Modals */}
       {showRequestModal && renderRequestModal()}
       {showPendingModal && renderPendingModal()}
       {showBatchAllocModal && renderBatchAllocModal()}
+      {editingLeave && renderEditModal()}
+
+      {/* Fixed tooltip */}
+      {tooltip && (
+        <div
+          className="fixed z-[200] bg-slate-800 text-slate-200 text-[11px] rounded-lg p-2.5 w-48 shadow-xl pointer-events-none"
+          style={{ left: tooltip.x, top: tooltip.y, transform: 'translateX(-50%)' }}
+        >
+          <div className="font-bold mb-1">{tooltip.r.days}일</div>
+          <div className="flex justify-between">
+            <span>사용 일수</span>
+            <span className="font-bold">{tooltip.r.amount}일</span>
+          </div>
+          {tooltip.r.reason && <div className="text-slate-400 mt-1">사유: {tooltip.r.reason}</div>}
+          <div className="mt-1 text-[10px]">
+            <span className={tooltip.r.status === 'approved' ? 'text-blue-400' : 'text-red-400'}>
+              {tooltip.r.status === 'approved' ? '승인' : '대기'}
+            </span>
+            {tooltip.r.approvedByName && <span className="text-slate-500 ml-1">({tooltip.r.approvedByName})</span>}
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -529,46 +772,151 @@ export default function LeavePanel() {
         <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
           <h3 className="font-bold text-slate-800 text-base mb-4">휴가 신청</h3>
 
-          <label className="block text-xs text-slate-500 mb-1">연도</label>
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-3"
-          >
-            {[now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map((y) => (
-              <option key={y} value={y}>{y}년</option>
-            ))}
-          </select>
+          {isSuperAdmin && (
+            <>
+              <label className="block text-xs text-slate-500 mb-1">대상 직원</label>
+              <select
+                value={reqTargetUserId}
+                onChange={(e) => setReqTargetUserId(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-3"
+              >
+                <option value="">본인 (직접 신청)</option>
+                {visibleUsers.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+            </>
+          )}
 
-          <label className="block text-xs text-slate-500 mb-1">월</label>
-          <select
-            value={reqMonth}
-            onChange={(e) => setReqMonth(Number(e.target.value))}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-3"
-          >
-            {MONTHS.map((m) => (
-              <option key={m} value={m}>{m}월</option>
-            ))}
-          </select>
+          {/* 캘린더 */}
+          {(() => {
+            const y = reqCalYear;
+            const m = reqCalMonth; // 0-based
+            const firstDay = new Date(y, m, 1).getDay();
+            const daysInMonth = new Date(y, m + 1, 0).getDate();
+            const weeks: (number | null)[][] = [];
+            let week: (number | null)[] = Array(firstDay).fill(null);
+            for (let d = 1; d <= daysInMonth; d++) {
+              week.push(d);
+              if (week.length === 7) { weeks.push(week); week = []; }
+            }
+            if (week.length > 0) { while (week.length < 7) week.push(null); weeks.push(week); }
 
-          <label className="block text-xs text-slate-500 mb-1">날짜 (쉼표로 구분, 예: 5, 6, 15)</label>
-          <input
-            type="text"
-            value={reqDays}
-            onChange={(e) => setReqDays(e.target.value)}
-            placeholder="5, 6, 15"
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-3"
-          />
+            const pad = (n: number) => String(n).padStart(2, '0');
+            const toKey = (day: number) => `${y}-${pad(m + 1)}-${pad(day)}`;
+            const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
-          <label className="block text-xs text-slate-500 mb-1">사용 일수 (0.5 단위)</label>
-          <input
-            type="number"
-            value={reqAmount}
-            onChange={(e) => setReqAmount(e.target.value)}
-            step="0.5"
-            min="0.5"
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-3"
-          />
+            // 클릭: 미선택 → 연차 → 오전반차 → 오후반차 → 미선택
+            const cycleDate = (day: number) => {
+              const key = toKey(day);
+              setReqSelectedDates((prev) => {
+                const next = new Map(prev);
+                const cur = next.get(key);
+                if (!cur) next.set(key, 'full');
+                else if (cur === 'full') next.set(key, 'am');
+                else if (cur === 'am') next.set(key, 'pm');
+                else next.delete(key);
+                return next;
+              });
+            };
+
+            const goMonth = (dir: number) => {
+              let nm = m + dir;
+              let ny = y;
+              if (nm < 0) { nm = 11; ny--; }
+              if (nm > 11) { nm = 0; ny++; }
+              setReqCalMonth(nm);
+              setReqCalYear(ny);
+            };
+
+            const sortedEntries = [...reqSelectedDates.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+            const typeLabel = (t: 'full' | 'am' | 'pm') => t === 'full' ? '연차' : t === 'am' ? '오전' : '오후';
+            const typeShort = (t: 'full' | 'am' | 'pm') => t === 'full' ? '' : t === 'am' ? '午前' : '午後';
+
+            return (
+              <>
+                <div className="flex items-center justify-between mb-2">
+                  <button onClick={() => goMonth(-1)} className="bg-transparent border-none cursor-pointer text-slate-500 text-lg px-2 hover:text-slate-800">&lt;</button>
+                  <span className="font-bold text-slate-800 text-sm">{y}년 {m + 1}월</span>
+                  <button onClick={() => goMonth(1)} className="bg-transparent border-none cursor-pointer text-slate-500 text-lg px-2 hover:text-slate-800">&gt;</button>
+                </div>
+                <div className="text-[10px] text-slate-400 text-center mb-2">클릭: 연차 → 오전반차 → 오후반차 → 해제</div>
+                <div className="grid grid-cols-7 text-center text-[11px] text-slate-400 mb-1">
+                  {['일', '월', '화', '수', '목', '금', '토'].map((d) => <div key={d} className="py-1 font-semibold">{d}</div>)}
+                </div>
+                <div className="grid grid-cols-7 gap-0.5 mb-3">
+                  {weeks.flat().map((day, i) => {
+                    if (day === null) return <div key={`e${i}`} />;
+                    const key = toKey(day);
+                    const sel = reqSelectedDates.get(key);
+                    const isToday = key === today;
+                    const isSun = i % 7 === 0;
+                    const isSat = i % 7 === 6;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => cycleDate(day)}
+                        className={`w-full aspect-square rounded-lg border-none cursor-pointer text-[10px] font-semibold transition-colors flex flex-col items-center justify-center leading-tight ${
+                          sel === 'full'
+                            ? 'bg-blue-600 text-white'
+                            : sel === 'am'
+                              ? 'bg-amber-500 text-white'
+                              : sel === 'pm'
+                                ? 'bg-purple-500 text-white'
+                                : isToday
+                                  ? 'bg-blue-50 text-blue-600'
+                                  : isSun ? 'bg-transparent text-red-400 hover:bg-red-50'
+                                  : isSat ? 'bg-transparent text-blue-400 hover:bg-blue-50'
+                                  : 'bg-transparent text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span className="text-xs">{day}</span>
+                        {sel && <span className="text-[8px] mt-px">{typeShort(sel)}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* 범례 + 잔여일 */}
+                {(() => {
+                  const tid = (isSuperAdmin && reqTargetUserId) ? reqTargetUserId : currentUser!.id;
+                  const tAlloc = getAllocation(tid);
+                  const tUsed = getUsedDays(tid);
+                  const tRemaining = tAlloc - tUsed;
+                  const afterUse = tRemaining - reqTotalAmount;
+                  return (
+                    <div className="bg-slate-50 rounded-lg px-3 py-2 mb-3 text-[11px]">
+                      <div className="flex gap-3 justify-center mb-1.5">
+                        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-600 inline-block" /> 연차(1일)</span>
+                        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500 inline-block" /> 오전반차(0.5)</span>
+                        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-500 inline-block" /> 오후반차(0.5)</span>
+                      </div>
+                      <div className="flex justify-between text-slate-500 border-t border-slate-200 pt-1.5">
+                        <span>발생 <strong className="text-slate-800">{tAlloc}</strong>일</span>
+                        <span>사용 <strong className="text-blue-600">{tUsed}</strong>일</span>
+                        <span>잔여 <strong className="text-green-600">{tRemaining}</strong>일</span>
+                      </div>
+                      {reqTotalAmount > 0 && (
+                        <div className="flex justify-between border-t border-slate-200 pt-1.5 mt-1.5 text-slate-500">
+                          <span>신청 <strong className="text-blue-600">{reqTotalAmount}</strong>일</span>
+                          <span>신청 후 잔여 <strong className={afterUse < 0 ? 'text-red-500' : 'text-green-600'}>{afterUse}</strong>일</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+                {sortedEntries.length > 0 && (
+                  <div className="text-xs text-slate-600 mb-3 bg-slate-50 rounded-lg px-3 py-2">
+                    {sortedEntries.map(([d, t]) => (
+                      <span key={d} className="inline-block mr-2">
+                        <span className={`inline-block w-1.5 h-1.5 rounded-full mr-0.5 ${t === 'full' ? 'bg-blue-600' : t === 'am' ? 'bg-amber-500' : 'bg-purple-500'}`} />
+                        {parseInt(d.slice(5, 7))}/{parseInt(d.slice(8, 10))} {typeLabel(t)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </>
+            );
+          })()}
 
           <label className="block text-xs text-slate-500 mb-1">사유</label>
           <input
@@ -600,56 +948,92 @@ export default function LeavePanel() {
 
   // ─── Pending Modal ──────────────────────────────────────
   function renderPendingModal() {
+    const totalCount = pendingLeaves.length + changeRequests.length;
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]" onClick={() => setShowPendingModal(false)}>
         <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
           <h3 className="font-bold text-slate-800 text-base mb-4">
-            승인 대기 ({pendingLeaves.length}건)
+            처리 대기 ({totalCount}건)
           </h3>
-          <p className="text-xs text-slate-400 mb-4">
-            {isSuperAdmin ? '전체 직원의 휴가 요청을 승인/반려합니다.' : '같은 팀 팀원의 휴가 요청을 승인/반려합니다.'}
-          </p>
 
-          {pendingLeaves.length === 0 ? (
-            <div className="text-center text-slate-400 py-8 text-sm">대기 중인 건이 없습니다.</div>
-          ) : (
-            <div className="space-y-3">
-              {pendingLeaves.map((r) => {
-                const reqUser = users.find((u) => u.id === r.userId);
-                return (
+          {/* 신규 승인 대기 */}
+          {pendingLeaves.length > 0 && (
+            <>
+              <p className="text-xs text-slate-500 font-bold mb-2">휴가 승인 대기 ({pendingLeaves.length}건)</p>
+              <div className="space-y-3 mb-4">
+                {pendingLeaves.map((r) => (
                   <div key={r.id} className="border border-slate-200 rounded-xl p-4">
                     <div className="flex items-center justify-between mb-2">
-                      <div>
-                        <span className="font-semibold text-slate-800">{getUserName(r.userId)}</span>
-                        <span className="text-slate-400 text-xs ml-2">{reqUser?.team}</span>
-                        {reqUser?.role === 'admin' && (
-                          <span className="text-green-600 text-[10px] ml-1 font-semibold">관리자</span>
-                        )}
-                      </div>
+                      <span className="font-semibold text-slate-800">{getUserName(r.userId)}</span>
                       <span className="text-xs text-slate-400">{r.requestedAt.slice(0, 10)}</span>
+                    </div>
+                    {/* 수정 전/후 비교 */}
+                    {r.originalDays ? (
+                      <div className="text-sm mb-2 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">수정 전</span>
+                          <span className="text-slate-400 line-through">{r.year}년 {r.month}월 {r.originalDays}일 ({r.originalAmount}일)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">수정 후</span>
+                          <span className="text-slate-800 font-semibold">{r.year}년 {r.month}월 {r.days}일 ({r.amount}일)</span>
+                        </div>
+                        {r.reason && <div className="text-slate-400 text-xs mt-0.5">사유: {r.reason}</div>}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-slate-600 mb-2">
+                        {r.year}년 {r.month}월 {r.days}일 ({r.amount}일)
+                        {r.reason && <span className="text-slate-400 ml-2">- {r.reason}</span>}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <button onClick={() => approveLeave(r.id, currentUser!.id)} className="flex-1 bg-blue-600 text-white border-none rounded-lg py-1.5 cursor-pointer text-xs font-semibold hover:bg-blue-700 transition-colors">승인</button>
+                      <button onClick={() => rejectLeave(r.id)} className="flex-1 bg-slate-100 text-slate-600 border-none rounded-lg py-1.5 cursor-pointer text-xs hover:bg-slate-200 transition-colors">반려</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* 수정/삭제 요청 */}
+          {changeRequests.length > 0 && (
+            <>
+              <p className="text-xs text-slate-500 font-bold mb-2">수정/삭제 요청 ({changeRequests.length}건)</p>
+              <div className="space-y-3 mb-4">
+                {changeRequests.map((r) => (
+                  <div key={r.id} className="border border-orange-200 rounded-xl p-4 bg-orange-50/50">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-800">{getUserName(r.userId)}</span>
+                        {r.editRequested && <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-semibold">수정 요청</span>}
+                        {r.deleteRequested && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-semibold">삭제 요청</span>}
+                      </div>
                     </div>
                     <div className="text-sm text-slate-600 mb-2">
                       {r.year}년 {r.month}월 {r.days}일 ({r.amount}일)
                       {r.reason && <span className="text-slate-400 ml-2">- {r.reason}</span>}
                     </div>
                     <div className="flex gap-2">
+                      {r.editRequested && (
+                        <button onClick={() => approveEditRequest(r.id)} className="flex-1 bg-orange-500 text-white border-none rounded-lg py-1.5 cursor-pointer text-xs font-semibold hover:bg-orange-600 transition-colors">수정 허용</button>
+                      )}
+                      {r.deleteRequested && (
+                        <button onClick={() => approveDeleteRequest(r.id)} className="flex-1 bg-red-500 text-white border-none rounded-lg py-1.5 cursor-pointer text-xs font-semibold hover:bg-red-600 transition-colors">삭제 승인</button>
+                      )}
                       <button
-                        onClick={() => { approveLeave(r.id, currentUser!.id); }}
-                        className="flex-1 bg-blue-600 text-white border-none rounded-lg py-1.5 cursor-pointer text-xs font-semibold hover:bg-blue-700 transition-colors"
-                      >
-                        승인
-                      </button>
-                      <button
-                        onClick={() => { rejectLeave(r.id); }}
+                        onClick={() => updateLeaveRequest(r.id, { editRequested: false, deleteRequested: false })}
                         className="flex-1 bg-slate-100 text-slate-600 border-none rounded-lg py-1.5 cursor-pointer text-xs hover:bg-slate-200 transition-colors"
-                      >
-                        반려
-                      </button>
+                      >거부</button>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {totalCount === 0 && (
+            <div className="text-center text-slate-400 py-8 text-sm">대기 중인 건이 없습니다.</div>
           )}
 
           <button
@@ -658,6 +1042,155 @@ export default function LeavePanel() {
           >
             닫기
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Edit Modal (pending 건 수정) ─────────────────────────
+  function renderEditModal() {
+    if (!editingLeave) return null;
+
+    const editTotalAmount = (() => {
+      let t = 0;
+      editingLeave.dates.forEach((type) => { t += type === 'full' ? 1 : 0.5; });
+      return t;
+    })();
+
+    const handleSaveEdit = () => {
+      if (editingLeave.dates.size === 0) { showToast('날짜를 선택해주세요.', 'error'); return; }
+      const sorted = [...editingLeave.dates.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+      const typeLabel = (t: 'full' | 'am' | 'pm') => t === 'full' ? '' : t === 'am' ? '(오전)' : '(오후)';
+      const daysStr = sorted.map(([d, t]) => `${parseInt(d.slice(8, 10))}${typeLabel(t)}`).join(', ');
+
+      // editAllowed 상태에서 저장 → pending으로 전환 (재승인 필요)
+      const req = leaveRequests.find((r) => r.id === editingLeave.id);
+      const wasEditAllowed = req?.editAllowed;
+
+      updateLeaveRequest(editingLeave.id, {
+        days: daysStr,
+        amount: editTotalAmount,
+        reason: editingLeave.reason.trim(),
+        ...(wasEditAllowed ? { status: 'pending' as const, editAllowed: false, approvedBy: null, approvedByName: null } : {}),
+      });
+      setEditingLeave(null);
+    };
+
+    const y = editingLeave.calYear;
+    const m = editingLeave.calMonth;
+    const firstDay = new Date(y, m, 1).getDay();
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const weeks: (number | null)[][] = [];
+    let week: (number | null)[] = Array(firstDay).fill(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      week.push(d);
+      if (week.length === 7) { weeks.push(week); week = []; }
+    }
+    if (week.length > 0) { while (week.length < 7) week.push(null); weeks.push(week); }
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toKey = (day: number) => `${y}-${pad(m + 1)}-${pad(day)}`;
+    const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+    const cycleDate = (day: number) => {
+      const key = toKey(day);
+      const next = new Map(editingLeave.dates);
+      const cur = next.get(key);
+      if (!cur) next.set(key, 'full');
+      else if (cur === 'full') next.set(key, 'am');
+      else if (cur === 'am') next.set(key, 'pm');
+      else next.delete(key);
+      setEditingLeave({ ...editingLeave, dates: next });
+    };
+
+    const goMonth = (dir: number) => {
+      let nm = m + dir;
+      let ny = y;
+      if (nm < 0) { nm = 11; ny--; }
+      if (nm > 11) { nm = 0; ny++; }
+      setEditingLeave({ ...editingLeave, calYear: ny, calMonth: nm });
+    };
+
+    const sortedEntries = [...editingLeave.dates.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const typeLabelFull = (t: 'full' | 'am' | 'pm') => t === 'full' ? '연차' : t === 'am' ? '오전' : '오후';
+    const typeShort = (t: 'full' | 'am' | 'pm') => t === 'full' ? '' : t === 'am' ? '午前' : '午後';
+
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]" onClick={() => setEditingLeave(null)}>
+        <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <h3 className="font-bold text-slate-800 text-base mb-4">휴가 수정</h3>
+
+          {/* 캘린더 */}
+          <div className="flex items-center justify-between mb-2">
+            <button onClick={() => goMonth(-1)} className="bg-transparent border-none cursor-pointer text-slate-500 text-lg px-2 hover:text-slate-800">&lt;</button>
+            <span className="font-bold text-slate-800 text-sm">{y}년 {m + 1}월</span>
+            <button onClick={() => goMonth(1)} className="bg-transparent border-none cursor-pointer text-slate-500 text-lg px-2 hover:text-slate-800">&gt;</button>
+          </div>
+          <div className="text-[10px] text-slate-400 text-center mb-2">클릭: 연차 → 오전반차 → 오후반차 → 해제</div>
+          <div className="grid grid-cols-7 text-center text-[11px] text-slate-400 mb-1">
+            {['일', '월', '화', '수', '목', '금', '토'].map((d) => <div key={d} className="py-1 font-semibold">{d}</div>)}
+          </div>
+          <div className="grid grid-cols-7 gap-0.5 mb-3">
+            {weeks.flat().map((day, i) => {
+              if (day === null) return <div key={`e${i}`} />;
+              const key = toKey(day);
+              const sel = editingLeave.dates.get(key);
+              const isToday = key === today;
+              const isSun = i % 7 === 0;
+              const isSat = i % 7 === 6;
+              return (
+                <button
+                  key={key}
+                  onClick={() => cycleDate(day)}
+                  className={`w-full aspect-square rounded-lg border-none cursor-pointer text-[10px] font-semibold transition-colors flex flex-col items-center justify-center leading-tight ${
+                    sel === 'full' ? 'bg-blue-600 text-white'
+                    : sel === 'am' ? 'bg-amber-500 text-white'
+                    : sel === 'pm' ? 'bg-purple-500 text-white'
+                    : isToday ? 'bg-blue-50 text-blue-600'
+                    : isSun ? 'bg-transparent text-red-400 hover:bg-red-50'
+                    : isSat ? 'bg-transparent text-blue-400 hover:bg-blue-50'
+                    : 'bg-transparent text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="text-xs">{day}</span>
+                  {sel && <span className="text-[8px] mt-px">{typeShort(sel)}</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 범례 */}
+          <div className="flex gap-3 justify-center mb-3 text-[10px]">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-600 inline-block" /> 연차(1일)</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500 inline-block" /> 오전반차(0.5)</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-500 inline-block" /> 오후반차(0.5)</span>
+          </div>
+
+          {sortedEntries.length > 0 && (
+            <div className="text-xs text-slate-600 mb-3 bg-slate-50 rounded-lg px-3 py-2">
+              {sortedEntries.map(([d, t]) => (
+                <span key={d} className="inline-block mr-2">
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full mr-0.5 ${t === 'full' ? 'bg-blue-600' : t === 'am' ? 'bg-amber-500' : 'bg-purple-500'}`} />
+                  {parseInt(d.slice(5, 7))}/{parseInt(d.slice(8, 10))} {typeLabelFull(t)}
+                </span>
+              ))}
+              <div className="mt-1 font-semibold text-blue-600">총 {editTotalAmount}일</div>
+            </div>
+          )}
+
+          <label className="block text-xs text-slate-500 mb-1">사유</label>
+          <input
+            type="text"
+            value={editingLeave.reason}
+            onChange={(e) => setEditingLeave({ ...editingLeave, reason: e.target.value })}
+            placeholder="사유 입력 (선택)"
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-4"
+          />
+
+          <div className="flex gap-2">
+            <button onClick={handleSaveEdit} className="flex-1 bg-blue-600 text-white border-none rounded-lg py-2.5 cursor-pointer font-semibold text-sm hover:bg-blue-700 transition-colors">저장</button>
+            <button onClick={() => setEditingLeave(null)} className="flex-1 bg-slate-100 text-slate-600 border-none rounded-lg py-2.5 cursor-pointer text-sm hover:bg-slate-200 transition-colors">취소</button>
+          </div>
         </div>
       </div>
     );
@@ -690,7 +1223,7 @@ export default function LeavePanel() {
               const vals: Record<string, string> = {};
               users.forEach((u) => {
                 const existing = leaveAllocations.find((a) => a.userId === u.id && a.year === y);
-                vals[u.id] = String(existing?.total ?? getProratedAllocation(u.id, y));
+                vals[u.id] = String(existing?.total ?? getDefaultAllocation(u.id, y));
               });
               setBatchValues(vals);
             }}

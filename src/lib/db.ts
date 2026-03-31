@@ -1,6 +1,6 @@
 import {
   doc, setDoc, getDoc, getDocs, deleteDoc,
-  collection, writeBatch,
+  collection, writeBatch, onSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import type { User, UserData, UserDataMap, LeaveRequest, LeaveAllocation } from '../types';
@@ -83,6 +83,34 @@ export async function saveLeaveRequest(req: LeaveRequest): Promise<void> {
 
 export async function deleteLeaveRequest(id: string): Promise<void> {
   await deleteDoc(doc(db, LEAVES_COL, id));
+}
+
+// 실시간 리스너
+export function onLeaveRequestsChange(callback: (requests: LeaveRequest[]) => void): () => void {
+  return onSnapshot(collection(db, LEAVES_COL), (snap) => {
+    const requests = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as LeaveRequest);
+    callback(requests);
+  });
+}
+
+export function onUsersChange(callback: (users: User[]) => void): () => void {
+  return onSnapshot(collection(db, USERS_COL), (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as User));
+  });
+}
+
+export function onUserDataChange(callback: (data: UserDataMap) => void): () => void {
+  return onSnapshot(collection(db, USER_DATA_COL), (snap) => {
+    const map: UserDataMap = {};
+    snap.docs.forEach((d) => { map[d.id] = d.data() as UserData; });
+    callback(map);
+  });
+}
+
+export function onLeaveAllocationsChange(callback: (allocs: LeaveAllocation[]) => void): () => void {
+  return onSnapshot(collection(db, LEAVE_ALLOC_COL), (snap) => {
+    callback(snap.docs.map((d) => d.data() as LeaveAllocation));
+  });
 }
 
 // ── Leave Allocations ───────────────────────────────────

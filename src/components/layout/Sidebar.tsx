@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../../stores/useStore';
 import { roleColor, getMondayStr } from '../../lib/utils';
-import { SUPERADMIN_EMAILS } from '../../lib/seed';
 import TeamManager from '../admin/TeamManager';
 
 export default function Sidebar() {
@@ -67,12 +66,13 @@ export default function Sidebar() {
 
   const leaveRequests = useStore((s) => s.leaveRequests);
   const pendingLeaveCount = (() => {
-    if (isSuperAdmin) return leaveRequests.filter((r) => r.status === 'pending').length;
+    if (isSuperAdmin) return leaveRequests.filter((r) => r.status === 'pending' || r.editRequested || r.deleteRequested).length;
     if (isAdmin) {
       const teamUserIds = users.filter((u) => u.team === currentUser.team).map((u) => u.id);
-      return leaveRequests.filter((r) => r.status === 'pending' && teamUserIds.includes(r.userId)).length;
+      return leaveRequests.filter((r) => (r.status === 'pending' || r.editRequested || r.deleteRequested) && teamUserIds.includes(r.userId)).length;
     }
-    return 0;
+    // user: 수정 허용된 건이 있으면 알림
+    return leaveRequests.filter((r) => r.userId === currentUser.id && r.editAllowed).length;
   })();
 
   const tabs = [
@@ -118,19 +118,22 @@ export default function Sidebar() {
       {/* Team Manager — superadmin 전용 */}
       {isSuperAdmin && <TeamManager />}
 
-      {/* 경영진 목록 */}
-      <div className="border-t border-slate-700 pt-2.5 px-3 pb-1 text-[11px] text-slate-600 font-bold tracking-wider">👑 경영진</div>
-      {Object.entries(SUPERADMIN_EMAILS).map(([email, info]) => (
-        <div key={email} className="mx-2 rounded-lg py-1.5 px-2 flex items-center gap-1.5">
-          <div className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style={{ background: roleColor('superadmin') }}>
-            {info.name[0]}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-slate-200 truncate">{info.name}</div>
-          </div>
-          <span className="text-[10px] text-slate-500">{info.title}</span>
-        </div>
-      ))}
+      {/* 경영진 목록 — users 중 role === 'superadmin' */}
+      {users.filter((u) => u.role === 'superadmin').length > 0 && (
+        <>
+          <div className="border-t border-slate-700 pt-2.5 px-3 pb-1 text-[11px] text-slate-600 font-bold tracking-wider">👑 경영진</div>
+          {users.filter((u) => u.role === 'superadmin').map((u) => (
+            <div key={u.id} className="mx-2 rounded-lg py-1.5 px-2 flex items-center gap-1.5">
+              <div className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style={{ background: roleColor('superadmin') }}>
+                {u.name[0]}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold text-slate-200 truncate">{u.name}</div>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
 
       {/* User List Header */}
       <div className="border-t border-slate-700 pt-2.5 px-3 pb-1 text-[11px] text-slate-600 font-bold tracking-wider">
@@ -152,7 +155,7 @@ export default function Sidebar() {
       {/* User List — 팀별 그룹 */}
       {(() => {
         const teamGroups: Record<string, typeof users> = {};
-        users.forEach((u) => {
+        users.filter((u) => u.role !== 'superadmin').forEach((u) => {
           const t = u.team || '미배정';
           if (!teamGroups[t]) teamGroups[t] = [];
           teamGroups[t].push(u);
@@ -168,7 +171,7 @@ export default function Sidebar() {
         const orderedTeams = [...teams.filter((t) => teamGroups[t]), ...Object.keys(teamGroups).filter((t) => !teams.includes(t))];
 
         const renderUser = (u: typeof users[0]) => {
-          const canAccess = isAdmin || u.team === currentUser.team;
+          const canAccess = true; // 전체 열람 가능
           return (
           <div
             key={u.id}

@@ -1,20 +1,5 @@
 import type { User, UserDataMap } from '../types';
 
-export const SUPERADMIN_EMAILS: Record<string, { name: string; title: '대표' | '이사' }> = {
-  'ceo@axissoft.co.kr': { name: '박경근', title: '대표' },
-  'wsbyun@axissoft.co.kr': { name: '변원섭', title: '이사' },
-  'minsoo@axissoft.co.kr': { name: '김민수', title: '이사' },
-  'jmkim@starplayer.net': { name: '테스트', title: '이사' },
-};
-
-export const SUPERADMIN: User = {
-  id: 'sa',
-  name: '변원섭',
-  email: 'wsbyun@axissoft.co.kr',
-  team: '-',
-  role: 'superadmin',
-  pw: 'axis717@',
-};
 
 export const SEED_USERS: User[] = [
   { id: 'u1', name: '김민준', email: 'minjun@axissoft.co.kr', team: '개발팀', role: 'admin' },
@@ -25,13 +10,8 @@ export const SEED_USERS: User[] = [
   { id: 'u6', name: '한도윤', email: 'doyun@axissoft.co.kr', team: '디자인팀', role: 'user' },
 ];
 
-export const DEMO_USERS: User[] = [
-  { ...SUPERADMIN },
-  { id: 'u1', name: '김민준', email: 'minjun@axissoft.co.kr', team: '개발팀', role: 'admin' },
-  { id: 'u5', name: '최서윤', email: 'seoyun@axissoft.co.kr', team: '기획팀', role: 'user' },
-];
 
-export const ALLOWED_DOMAINS = ['axissoft.co.kr', 'starplayer.net'];
+export const ALLOWED_DOMAINS = ['axissoft.co.kr', 'starplayer.net', 'gmail.com'];
 
 export const SEED_TEAMS = ['개발팀', '기획팀', '디자인팀'];
 

@@ -3,7 +3,7 @@ import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import type { User, UserData, UserDataMap, OKR, WeeklyPriority, LeaveRequest, LeaveAllocation } from '../types';
 import { makeUserData, makeOkr, getMondayStr, getQuarter, setCustomTeamColors } from '../lib/utils';
-import { SEED_USERS, SEED_TEAMS, SEED_USER_DATA, SUPERADMIN, SUPERADMIN_EMAILS } from '../lib/seed';
+import { SEED_USERS, SEED_TEAMS, SEED_USER_DATA } from '../lib/seed';
 import * as DB from '../lib/db';
 
 interface AppState {
@@ -59,8 +59,13 @@ interface AppState {
   leaveRequests: LeaveRequest[];
   leaveAllocations: LeaveAllocation[];
   addLeaveRequest: (req: LeaveRequest) => void;
+  updateLeaveRequest: (id: string, updates: Partial<LeaveRequest>) => void;
   approveLeave: (id: string, approvedBy: string) => void;
   rejectLeave: (id: string) => void;
+  requestEditLeave: (id: string) => void;
+  requestDeleteLeave: (id: string) => void;
+  approveEditRequest: (id: string) => void;
+  approveDeleteRequest: (id: string) => void;
   deleteLeaveRequest: (id: string) => void;
   setLeaveAllocation: (userId: string, year: number, total: number) => void;
 
@@ -136,19 +141,27 @@ export const useStore = create<AppState>((set, get) => ({
           unsubscribe();
           if (firebaseUser?.email) {
             const email = firebaseUser.email;
-            if (SUPERADMIN_EMAILS[email]) {
-              const sa: User = { id: firebaseUser.uid, name: SUPERADMIN_EMAILS[email].name, email, team: '-', role: 'superadmin' };
-              set({ currentUser: sa, viewUserId: sa.id });
-            } else {
-              const matched = loadedUsers.find((u) => u.email === email);
-              if (matched) {
-                set({ currentUser: matched, viewUserId: matched.id });
-              }
+            const matched = loadedUsers.find((u) => u.email === email);
+            if (matched) {
+              set({ currentUser: matched, viewUserId: matched.id });
             }
           }
           resolve();
         });
       });
+
+      // 실시간 리스너 등록
+      DB.onLeaveRequestsChange((requests) => set({ leaveRequests: requests }));
+      DB.onLeaveAllocationsChange((allocs) => set({ leaveAllocations: allocs }));
+      DB.onUsersChange((u) => {
+        set((s) => {
+          // currentUser도 동기화 (본인 정보 변경 반영)
+          const cur = s.currentUser;
+          const updated = cur ? u.find((x) => x.id === cur.id) : null;
+          return { users: u, ...(updated ? { currentUser: updated } : {}) };
+        });
+      });
+      DB.onUserDataChange((data) => set({ userData: data }));
 
       set({ loading: false, initialized: true });
     } catch (err) {
@@ -352,10 +365,61 @@ export const useStore = create<AppState>((set, get) => ({
     get().showToast('휴가 신청 완료');
   },
 
+  updateLeaveRequest: (id, updates) => {
+    set((s) => ({
+      leaveRequests: s.leaveRequests.map((r) => r.id === id ? { ...r, ...updates } : r),
+    }));
+    const updated = get().leaveRequests.find((r) => r.id === id);
+    if (updated) DB.saveLeaveRequest(updated).catch(console.error);
+    get().showToast('휴가 수정 완료');
+  },
+
+  requestEditLeave: (id) => {
+    set((s) => ({
+      leaveRequests: s.leaveRequests.map((r) => r.id === id ? { ...r, editRequested: true } : r),
+    }));
+    const updated = get().leaveRequests.find((r) => r.id === id);
+    if (updated) DB.saveLeaveRequest(updated).catch(console.error);
+    get().showToast('수정 요청 완료');
+  },
+
+  requestDeleteLeave: (id) => {
+    set((s) => ({
+      leaveRequests: s.leaveRequests.map((r) => r.id === id ? { ...r, deleteRequested: true } : r),
+    }));
+    const updated = get().leaveRequests.find((r) => r.id === id);
+    if (updated) DB.saveLeaveRequest(updated).catch(console.error);
+    get().showToast('삭제 요청 완료');
+  },
+
+  approveEditRequest: (id) => {
+    set((s) => ({
+      leaveRequests: s.leaveRequests.map((r) => {
+        if (r.id !== id) return r;
+        // 수정 허용 (status는 approved 유지, user가 수정 후 저장하면 pending으로 전환)
+        return { ...r, editRequested: false, editAllowed: true, originalDays: r.days, originalAmount: r.amount };
+      }),
+    }));
+    const updated = get().leaveRequests.find((r) => r.id === id);
+    if (updated) DB.saveLeaveRequest(updated).catch(console.error);
+    get().showToast('수정 허용 완료 (사용자가 수정 후 재승인 필요)');
+  },
+
+  approveDeleteRequest: (id) => {
+    set((s) => ({ leaveRequests: s.leaveRequests.filter((r) => r.id !== id) }));
+    if (DB.isFirestoreEnabled()) DB.deleteLeaveRequest(id).catch(console.error);
+    get().showToast('삭제 요청 승인 완료', 'error');
+  },
+
   approveLeave: (id, approvedBy) => {
+    const currentUser = get().currentUser;
+    const approvedByName = currentUser?.name || approvedBy;
+    const role = currentUser?.role;
+    const label = role === 'superadmin' ? '경영진' : role === 'admin' ? '관리자' : '';
+    const displayName = label ? `${approvedByName} (${label})` : approvedByName;
     set((s) => ({
       leaveRequests: s.leaveRequests.map((r) =>
-        r.id === id ? { ...r, status: 'approved' as const, approvedBy } : r,
+        r.id === id ? { ...r, status: 'approved' as const, approvedBy, approvedByName: displayName, originalDays: null, originalAmount: null, editRequested: false, deleteRequested: false } : r,
       ),
     }));
     const updated = get().leaveRequests.find((r) => r.id === id);
@@ -364,9 +428,14 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   rejectLeave: (id) => {
+    const currentUser = get().currentUser;
+    const rejectedByName = currentUser?.name || '';
+    const role = currentUser?.role;
+    const label = role === 'superadmin' ? '경영진' : role === 'admin' ? '관리자' : '';
+    const displayName = label ? `${rejectedByName} (${label})` : rejectedByName;
     set((s) => ({
       leaveRequests: s.leaveRequests.map((r) =>
-        r.id === id ? { ...r, status: 'rejected' as const } : r,
+        r.id === id ? { ...r, status: 'rejected' as const, approvedBy: currentUser?.id || null, approvedByName: displayName } : r,
       ),
     }));
     const updated = get().leaveRequests.find((r) => r.id === id);
@@ -415,5 +484,5 @@ export const useStore = create<AppState>((set, get) => ({
     return get().userData[userId] || makeUserData();
   },
 
-  getSuperAdmin: () => SUPERADMIN,
+  getSuperAdmin: () => get().users.find((u) => u.role === 'superadmin') || get().currentUser!,
 }));
