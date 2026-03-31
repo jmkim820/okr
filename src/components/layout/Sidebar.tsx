@@ -66,13 +66,12 @@ export default function Sidebar() {
 
   const leaveRequests = useStore((s) => s.leaveRequests);
   const pendingLeaveCount = (() => {
-    if (isSuperAdmin) return leaveRequests.filter((r) => r.status === 'pending' || r.editRequested || r.deleteRequested).length;
+    if (isSuperAdmin) return leaveRequests.filter((r) => r.status === 'pending' || r.deleteRequested).length;
     if (isAdmin) {
       const teamUserIds = users.filter((u) => u.team === currentUser.team).map((u) => u.id);
-      return leaveRequests.filter((r) => (r.status === 'pending' || r.editRequested || r.deleteRequested) && teamUserIds.includes(r.userId)).length;
+      return leaveRequests.filter((r) => (r.status === 'pending' || r.deleteRequested) && teamUserIds.includes(r.userId)).length;
     }
-    // user: 수정 허용된 건이 있으면 알림
-    return leaveRequests.filter((r) => r.userId === currentUser.id && r.editAllowed).length;
+    return 0;
   })();
 
   const tabs = [
@@ -283,7 +282,7 @@ export default function Sidebar() {
               : 'bg-red-500/10 text-red-400 hover:bg-red-500/20'
           }`}
         >
-          🏖️ 휴가관리
+          🏖️ 휴가 관리
           {pendingLeaveCount > 0 && (
             <span className="w-5 h-5 rounded-full bg-white text-red-600 text-[10px] font-bold flex items-center justify-center shrink-0">
               {pendingLeaveCount}

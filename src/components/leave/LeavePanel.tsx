@@ -12,7 +12,7 @@ export default function LeavePanel() {
     leaveRequests, leaveAllocations,
     addLeaveRequest, updateLeaveRequest,
     approveLeave, rejectLeave, deleteLeaveRequest,
-    requestEditLeave, requestDeleteLeave, approveEditRequest, approveDeleteRequest,
+    requestDeleteLeave, approveDeleteRequest,
     setLeaveAllocation, batchSetLeaveAllocations, showToast,
   } = useStore();
 
@@ -165,11 +165,11 @@ export default function LeavePanel() {
   // 수정/삭제 요청 건 (관리자용)
   const changeRequests = useMemo(() => {
     if (isSuperAdmin) {
-      return yearLeaves.filter((r) => (r.editRequested || r.deleteRequested) && r.userId !== currentUser.id);
+      return yearLeaves.filter((r) => r.deleteRequested && r.userId !== currentUser.id);
     }
     if (currentUser.role === 'admin') {
       return yearLeaves.filter((r) => {
-        if (!(r.editRequested || r.deleteRequested) || r.userId === currentUser.id) return false;
+        if (!r.deleteRequested || r.userId === currentUser.id) return false;
         const reqUser = users.find((u) => u.id === r.userId);
         return reqUser?.team === currentUser.team && reqUser?.role === 'user';
       });
@@ -419,12 +419,12 @@ export default function LeavePanel() {
                       <td className="py-2 px-2 text-slate-600">{r.reason || '-'}</td>
                       <td className="py-2 px-2 text-center">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                          r.editAllowed ? 'bg-green-100 text-green-700' :
+                          r.deleteRequested ? 'bg-orange-100 text-orange-600' :
                           r.status === 'approved' ? 'bg-blue-100 text-blue-700' :
                           r.status === 'pending' ? 'bg-red-100 text-red-600' :
                           'bg-slate-100 text-slate-500'
                         }`}>
-                          {r.editAllowed ? '수정 허용됨' : r.status === 'approved' ? '승인' : r.status === 'pending' ? '대기' : '반려'}
+                          {r.deleteRequested ? '삭제 대기' : r.status === 'approved' ? '승인' : r.status === 'pending' ? '대기' : '반려'}
                         </span>
                       </td>
                       <td className="py-2 px-2 text-center text-slate-400 text-xs">
@@ -454,28 +454,23 @@ export default function LeavePanel() {
                                 <button onClick={() => deleteLeaveRequest(r.id)} className="text-red-500 bg-transparent border-none cursor-pointer text-xs hover:text-red-700">삭제</button>
                               </>
                             )}
-                            {r.status === 'approved' && r.editAllowed && (
-                              <button onClick={() => {
-                                const dates = new Map<string, 'full' | 'am' | 'pm'>();
-                                const pad3 = (n: number) => String(n).padStart(2, '0');
-                                r.days.split(',').map((s) => s.trim()).forEach((s) => {
-                                  const dayNum = parseInt(s);
-                                  if (isNaN(dayNum)) return;
-                                  const type: 'full' | 'am' | 'pm' = s.includes('오전') ? 'am' : s.includes('오후') ? 'pm' : 'full';
-                                  dates.set(`${r.year}-${pad3(r.month)}-${pad3(dayNum)}`, type);
-                                });
-                                setEditingLeave({ id: r.id, year: r.year, month: r.month, reason: r.reason, dates, calYear: r.year, calMonth: r.month - 1 });
-                              }} className="text-green-600 bg-transparent border-none cursor-pointer text-xs font-semibold hover:text-green-800">수정하기</button>
-                            )}
-                            {r.status === 'approved' && !r.editAllowed && !r.editRequested && !r.deleteRequested && (
+                            {r.status === 'approved' && !r.deleteRequested && (
                               <>
-                                <button onClick={() => requestEditLeave(r.id)} className="text-blue-500 bg-transparent border-none cursor-pointer text-xs hover:text-blue-700">수정요청</button>
-                                <button onClick={() => requestDeleteLeave(r.id)} className="text-red-500 bg-transparent border-none cursor-pointer text-xs hover:text-red-700">삭제요청</button>
+                                <button onClick={() => {
+                                  const dates = new Map<string, 'full' | 'am' | 'pm'>();
+                                  const pad3 = (n: number) => String(n).padStart(2, '0');
+                                  r.days.split(',').map((s) => s.trim()).forEach((s) => {
+                                    const dayNum = parseInt(s);
+                                    if (isNaN(dayNum)) return;
+                                    const type: 'full' | 'am' | 'pm' = s.includes('오전') ? 'am' : s.includes('오후') ? 'pm' : 'full';
+                                    dates.set(`${r.year}-${pad3(r.month)}-${pad3(dayNum)}`, type);
+                                  });
+                                  setEditingLeave({ id: r.id, year: r.year, month: r.month, reason: r.reason, dates, calYear: r.year, calMonth: r.month - 1 });
+                                }} className="text-blue-500 bg-transparent border-none cursor-pointer text-xs hover:text-blue-700">수정</button>
+                                <button onClick={() => requestDeleteLeave(r.id)} className="text-red-500 bg-transparent border-none cursor-pointer text-xs hover:text-red-700">삭제</button>
                               </>
                             )}
-                            {r.editRequested && <span className="text-[10px] text-orange-500 font-semibold">수정 요청중</span>}
-                            {r.editAllowed && <span className="text-[10px] text-green-600 font-semibold ml-1">수정 허용됨</span>}
-                            {r.deleteRequested && <span className="text-[10px] text-red-500 font-semibold">삭제 요청중</span>}
+                            {r.deleteRequested && <span className="text-[10px] text-orange-500 font-semibold">삭제 승인 대기</span>}
                           </div>
                         )}
                       </td>
@@ -745,7 +740,7 @@ export default function LeavePanel() {
       {/* Fixed tooltip */}
       {tooltip && (
         <div
-          className="fixed z-[200] bg-slate-800 text-slate-200 text-[11px] rounded-lg p-2.5 w-48 shadow-xl pointer-events-none"
+          className="fixed z-[200] bg-slate-800 text-slate-200 text-[11px] rounded-lg p-2.5 w-fit max-w-xs shadow-xl pointer-events-none whitespace-nowrap"
           style={{ left: tooltip.x, top: tooltip.y, transform: 'translateX(-50%)' }}
         >
           <div className="font-bold mb-1">{tooltip.r.days}일</div>
@@ -999,15 +994,14 @@ export default function LeavePanel() {
           {/* 수정/삭제 요청 */}
           {changeRequests.length > 0 && (
             <>
-              <p className="text-xs text-slate-500 font-bold mb-2">수정/삭제 요청 ({changeRequests.length}건)</p>
+              <p className="text-xs text-slate-500 font-bold mb-2">삭제 요청 ({changeRequests.length}건)</p>
               <div className="space-y-3 mb-4">
                 {changeRequests.map((r) => (
-                  <div key={r.id} className="border border-orange-200 rounded-xl p-4 bg-orange-50/50">
+                  <div key={r.id} className="border border-red-200 rounded-xl p-4 bg-red-50/50">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-slate-800">{getUserName(r.userId)}</span>
-                        {r.editRequested && <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-semibold">수정 요청</span>}
-                        {r.deleteRequested && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-semibold">삭제 요청</span>}
+                        <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-semibold">삭제 요청</span>
                       </div>
                     </div>
                     <div className="text-sm text-slate-600 mb-2">
@@ -1015,14 +1009,9 @@ export default function LeavePanel() {
                       {r.reason && <span className="text-slate-400 ml-2">- {r.reason}</span>}
                     </div>
                     <div className="flex gap-2">
-                      {r.editRequested && (
-                        <button onClick={() => approveEditRequest(r.id)} className="flex-1 bg-orange-500 text-white border-none rounded-lg py-1.5 cursor-pointer text-xs font-semibold hover:bg-orange-600 transition-colors">수정 허용</button>
-                      )}
-                      {r.deleteRequested && (
-                        <button onClick={() => approveDeleteRequest(r.id)} className="flex-1 bg-red-500 text-white border-none rounded-lg py-1.5 cursor-pointer text-xs font-semibold hover:bg-red-600 transition-colors">삭제 승인</button>
-                      )}
+                      <button onClick={() => approveDeleteRequest(r.id)} className="flex-1 bg-red-500 text-white border-none rounded-lg py-1.5 cursor-pointer text-xs font-semibold hover:bg-red-600 transition-colors">삭제 승인</button>
                       <button
-                        onClick={() => updateLeaveRequest(r.id, { editRequested: false, deleteRequested: false })}
+                        onClick={() => updateLeaveRequest(r.id, { deleteRequested: false })}
                         className="flex-1 bg-slate-100 text-slate-600 border-none rounded-lg py-1.5 cursor-pointer text-xs hover:bg-slate-200 transition-colors"
                       >거부</button>
                     </div>
@@ -1063,15 +1052,15 @@ export default function LeavePanel() {
       const typeLabel = (t: 'full' | 'am' | 'pm') => t === 'full' ? '' : t === 'am' ? '(오전)' : '(오후)';
       const daysStr = sorted.map(([d, t]) => `${parseInt(d.slice(8, 10))}${typeLabel(t)}`).join(', ');
 
-      // editAllowed 상태에서 저장 → pending으로 전환 (재승인 필요)
+      // 승인 건 수정 시 → pending으로 전환 + 원본 저장 (재승인 필요)
       const req = leaveRequests.find((r) => r.id === editingLeave.id);
-      const wasEditAllowed = req?.editAllowed;
+      const wasApproved = req?.status === 'approved';
 
       updateLeaveRequest(editingLeave.id, {
         days: daysStr,
         amount: editTotalAmount,
         reason: editingLeave.reason.trim(),
-        ...(wasEditAllowed ? { status: 'pending' as const, editAllowed: false, approvedBy: null, approvedByName: null } : {}),
+        ...(wasApproved ? { status: 'pending' as const, approvedBy: null, approvedByName: null, originalDays: req.days, originalAmount: req.amount } : {}),
       });
       setEditingLeave(null);
     };

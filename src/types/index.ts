@@ -63,9 +63,7 @@ export interface LeaveRequest {
   requestedAt: string;
   approvedBy: string | null;
   approvedByName?: string | null;
-  editRequested?: boolean; // 승인된 건에 대한 수정 요청
-  editAllowed?: boolean;   // 관리자가 수정 허용 → user가 수정 가능
-  deleteRequested?: boolean;
+  deleteRequested?: boolean; // 삭제 승인 대기
   originalDays?: string | null; // 수정 전 원본 (비교 표시용)
   originalAmount?: number | null;
 }

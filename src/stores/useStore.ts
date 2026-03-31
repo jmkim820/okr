@@ -62,9 +62,7 @@ interface AppState {
   updateLeaveRequest: (id: string, updates: Partial<LeaveRequest>) => void;
   approveLeave: (id: string, approvedBy: string) => void;
   rejectLeave: (id: string) => void;
-  requestEditLeave: (id: string) => void;
   requestDeleteLeave: (id: string) => void;
-  approveEditRequest: (id: string) => void;
   approveDeleteRequest: (id: string) => void;
   deleteLeaveRequest: (id: string) => void;
   setLeaveAllocation: (userId: string, year: number, total: number) => void;
@@ -374,15 +372,6 @@ export const useStore = create<AppState>((set, get) => ({
     get().showToast('휴가 수정 완료');
   },
 
-  requestEditLeave: (id) => {
-    set((s) => ({
-      leaveRequests: s.leaveRequests.map((r) => r.id === id ? { ...r, editRequested: true } : r),
-    }));
-    const updated = get().leaveRequests.find((r) => r.id === id);
-    if (updated) DB.saveLeaveRequest(updated).catch(console.error);
-    get().showToast('수정 요청 완료');
-  },
-
   requestDeleteLeave: (id) => {
     set((s) => ({
       leaveRequests: s.leaveRequests.map((r) => r.id === id ? { ...r, deleteRequested: true } : r),
@@ -390,19 +379,6 @@ export const useStore = create<AppState>((set, get) => ({
     const updated = get().leaveRequests.find((r) => r.id === id);
     if (updated) DB.saveLeaveRequest(updated).catch(console.error);
     get().showToast('삭제 요청 완료');
-  },
-
-  approveEditRequest: (id) => {
-    set((s) => ({
-      leaveRequests: s.leaveRequests.map((r) => {
-        if (r.id !== id) return r;
-        // 수정 허용 (status는 approved 유지, user가 수정 후 저장하면 pending으로 전환)
-        return { ...r, editRequested: false, editAllowed: true, originalDays: r.days, originalAmount: r.amount };
-      }),
-    }));
-    const updated = get().leaveRequests.find((r) => r.id === id);
-    if (updated) DB.saveLeaveRequest(updated).catch(console.error);
-    get().showToast('수정 허용 완료 (사용자가 수정 후 재승인 필요)');
   },
 
   approveDeleteRequest: (id) => {
@@ -419,7 +395,7 @@ export const useStore = create<AppState>((set, get) => ({
     const displayName = label ? `${approvedByName} (${label})` : approvedByName;
     set((s) => ({
       leaveRequests: s.leaveRequests.map((r) =>
-        r.id === id ? { ...r, status: 'approved' as const, approvedBy, approvedByName: displayName, originalDays: null, originalAmount: null, editRequested: false, deleteRequested: false } : r,
+        r.id === id ? { ...r, status: 'approved' as const, approvedBy, approvedByName: displayName, originalDays: null, originalAmount: null, deleteRequested: false } : r,
       ),
     }));
     const updated = get().leaveRequests.find((r) => r.id === id);
