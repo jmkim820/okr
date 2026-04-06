@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import type { User, UserDataMap, WeeklyPriority } from '../../types';
+import type { User, WeeklyPriority } from '../../types';
 import { fmtWeek, roleColor, levelColor } from '../../lib/utils';
+import { useStore } from '../../stores/useStore';
 
 interface Props {
   users: User[];
-  userData: UserDataMap;
 }
 
 interface GanttTooltip {
@@ -22,7 +22,8 @@ interface TextTooltip {
   label?: string;
 }
 
-export default function GanttPanel({ users, userData }: Props) {
+export default function GanttPanel({ users }: Props) {
+  const userData = useStore((s) => s.userData);
   const [tooltip, setTooltip] = useState<GanttTooltip | null>(null);
   const [textTip, setTextTip] = useState<TextTooltip | null>(null);
   const [compact, setCompact] = useState(false);

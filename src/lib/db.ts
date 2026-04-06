@@ -99,11 +99,21 @@ export function onUsersChange(callback: (users: User[]) => void): () => void {
   });
 }
 
-export function onUserDataChange(callback: (data: UserDataMap) => void): () => void {
+export function onUserDataChange(callback: (changedEntries: Array<{ id: string; data: UserData }>, removedIds: string[]) => void): () => void {
   return onSnapshot(collection(db, USER_DATA_COL), (snap) => {
-    const map: UserDataMap = {};
-    snap.docs.forEach((d) => { map[d.id] = d.data() as UserData; });
-    callback(map);
+    const changed: Array<{ id: string; data: UserData }> = [];
+    const removed: string[] = [];
+    snap.docChanges().forEach((change) => {
+      if (change.type === 'removed') {
+        removed.push(change.doc.id);
+      } else {
+        // 'added' or 'modified'
+        changed.push({ id: change.doc.id, data: change.doc.data() as UserData });
+      }
+    });
+    if (changed.length > 0 || removed.length > 0) {
+      callback(changed, removed);
+    }
   });
 }
 

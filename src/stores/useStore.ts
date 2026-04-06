@@ -148,18 +148,9 @@ export const useStore = create<AppState>((set, get) => ({
         });
       });
 
-      // 실시간 리스너 등록
+      // 실시간 리스너: 휴가 관련만 등록
       DB.onLeaveRequestsChange((requests) => set({ leaveRequests: requests }));
       DB.onLeaveAllocationsChange((allocs) => set({ leaveAllocations: allocs }));
-      DB.onUsersChange((u) => {
-        set((s) => {
-          // currentUser도 동기화 (본인 정보 변경 반영)
-          const cur = s.currentUser;
-          const updated = cur ? u.find((x) => x.id === cur.id) : null;
-          return { users: u, ...(updated ? { currentUser: updated } : {}) };
-        });
-      });
-      DB.onUserDataChange((data) => set({ userData: data }));
 
       set({ loading: false, initialized: true });
     } catch (err) {

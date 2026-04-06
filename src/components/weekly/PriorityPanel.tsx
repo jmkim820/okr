@@ -31,11 +31,13 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
   const krs = data.current.okr?.krs || [];
   const showToast = useStore((s) => s.showToast);
 
+  // 값 기반 비교로 다른 유저의 변경에 의한 불필요한 폼 리셋 방지
+  const prioritiesJson = JSON.stringify(data.current.priorities);
   useEffect(() => {
     setList(data.current.priorities);
     setEditing(null);
     setShowAddForm(false);
-  }, [user.id, data.current.priorities]);
+  }, [user.id, prioritiesJson]);
 
   const startEdit = (row: WeeklyPriority) => {
     setEditing(row.week);
@@ -153,7 +155,7 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
       {[...list].reverse().map((row) => (
         <div key={row.week} className="bg-white rounded-xl border border-slate-200 mb-3 overflow-hidden shadow-sm">
           <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex justify-between items-center">
-            <span className="font-bold text-slate-700 text-sm">📅 {fmtWeek(row.week)}</span>
+            <span className="font-bold text-slate-700 text-base">📅 {fmtWeek(row.week)}</span>
             <div className="flex gap-1.5">
               {canEdit && editing !== row.week && (
                 <>
@@ -174,9 +176,9 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
             {editing === row.week && draft ? (
               <div>
                 {[0, 1, 2].map((i) => (
-                  <div key={i} className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center mb-2">
-                    <span className="w-8 text-xs font-bold text-white bg-primary rounded-md px-1.5 py-0.5 text-center shrink-0 self-start sm:self-center">P1</span>
-                    <input
+                  <div key={i} className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-start mb-2">
+                    <span className="w-8 text-xs font-bold text-white bg-primary rounded-md px-1.5 py-0.5 text-center shrink-0 self-start sm:mt-2">P1</span>
+                    <textarea
                       value={draft.p1[i]}
                       onChange={(e) => {
                         const a = [...draft.p1] as [string, string, string];
@@ -184,7 +186,8 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
                         setDraft({ ...draft, p1: a });
                       }}
                       placeholder={`P1-${i + 1} 항목`}
-                      className={`flex-1 ${inputCls}`}
+                      rows={2}
+                      className={`flex-1 ${inputCls} resize-y`}
                     />
                     <select
                       value={draft.krTags[i]}
@@ -193,7 +196,7 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
                         a[i] = e.target.value;
                         setDraft({ ...draft, krTags: a });
                       }}
-                      className={`${inputCls} sm:!w-[90px] text-xs`}
+                      className={`${inputCls} sm:!w-[90px] text-xs sm:mt-2`}
                     >
                       <option value="">KR 연결</option>
                       {krs.filter((k) => k.text).map((k) => (
@@ -202,22 +205,24 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
                     </select>
                   </div>
                 ))}
-                <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center mb-2">
-                  <span className="w-8 text-xs font-bold text-white bg-amber-500 rounded-md px-1.5 py-0.5 text-center shrink-0 self-start sm:self-center">P2</span>
-                  <input
+                <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-start mb-2">
+                  <span className="w-8 text-xs font-bold text-white bg-amber-500 rounded-md px-1.5 py-0.5 text-center shrink-0 self-start sm:mt-2">P2</span>
+                  <textarea
                     value={draft.p2}
                     onChange={(e) => setDraft({ ...draft, p2: e.target.value })}
                     placeholder="P2 항목"
-                    className={`flex-1 ${inputCls}`}
+                    rows={2}
+                    className={`flex-1 ${inputCls} resize-y`}
                   />
                 </div>
-                <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-                  <span className="w-8 text-xs text-slate-500 text-center shrink-0 self-start sm:self-center">📝</span>
-                  <input
+                <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-start">
+                  <span className="w-8 text-xs text-slate-500 text-center shrink-0 self-start sm:mt-2">📝</span>
+                  <textarea
                     value={draft.note}
                     onChange={(e) => setDraft({ ...draft, note: e.target.value })}
                     placeholder="주간 메모 (선택)"
-                    className={`flex-1 ${inputCls}`}
+                    rows={2}
+                    className={`flex-1 ${inputCls} resize-y`}
                   />
                 </div>
               </div>
@@ -228,29 +233,29 @@ export default function PriorityPanel({ user, data, canEdit, onSave }: Props) {
                     📋 이전 분기에서 복사된 항목입니다. 검토 후 수정하세요.
                   </div>
                 )}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3 items-start">
                   {row.p1.map((t, i) =>
                     t ? (
-                      <div key={i} className="bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-2">
-                        <div className="text-[11px] font-bold text-primary mb-0.5">
+                      <div key={i} className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-3">
+                        <div className="text-xs font-bold text-primary mb-1">
                           P1-{i + 1}{' '}
                           {row.krTags?.[i] && (
-                            <span className="bg-indigo-100 px-1.5 py-0.5 rounded-[10px]">{row.krTags[i].toUpperCase()}</span>
+                            <span className="bg-indigo-100 px-1.5 py-0.5 rounded-[10px] text-[11px]">{row.krTags[i].toUpperCase()}</span>
                           )}
                         </div>
-                        <div className="text-[13px] text-blue-900">{t}</div>
+                        <div className="text-[15px] text-blue-900 leading-snug whitespace-pre-wrap">{t}</div>
                       </div>
                     ) : null
                   )}
                 </div>
                 {row.p2 && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 mb-2 inline-block">
-                    <span className="text-[11px] font-bold text-amber-600">P2 </span>
-                    <span className="text-[13px] text-amber-900">{row.p2}</span>
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-3 mb-3">
+                    <span className="text-xs font-bold text-amber-600">P2 </span>
+                    <div className="text-[15px] text-amber-900 leading-snug whitespace-pre-wrap mt-1">{row.p2}</div>
                   </div>
                 )}
                 {row.note && !row.note.includes('이전 분기') && (
-                  <div className="text-xs text-slate-500 mt-1">📝 {row.note}</div>
+                  <div className="text-sm text-slate-500 mt-1 whitespace-pre-wrap">📝 {row.note}</div>
                 )}
               </div>
             )}

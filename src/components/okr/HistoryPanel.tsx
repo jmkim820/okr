@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { User, ArchivedQuarter } from '../../types';
+import type { User, ArchivedQuarter, WeeklyPriority } from '../../types';
 import { fmtWeek, levelColor, quarterLabel } from '../../lib/utils';
 import Card from '../ui/Card';
 
@@ -8,9 +8,17 @@ interface Props {
   history: ArchivedQuarter[];
 }
 
+interface HistTooltip {
+  x: number;
+  y: number;
+  week: string;
+  p: WeeklyPriority;
+}
+
 export default function HistoryPanel({ user, history }: Props) {
   const [selected, setSelected] = useState<ArchivedQuarter | null>(null);
   const [showGantt, setShowGantt] = useState(false);
+  const [tooltip, setTooltip] = useState<HistTooltip | null>(null);
   const sorted = [...history].sort((a, b) => b.quarter.localeCompare(a.quarter));
 
   if (!history.length) {
@@ -124,7 +132,15 @@ export default function HistoryPanel({ user, history }: Props) {
                           const count = p.p1.filter(Boolean).length + (p.p2 ? 1 : 0);
                           const isMonthBorder = wi > 0 && getMonth(p.week) !== getMonth(weeks[wi - 1].week);
                           return (
-                            <div key={p.week} className={`flex-1 min-w-[68px] border-r border-slate-100 last:border-r-0 p-1.5 flex flex-col items-center justify-center ${isMonthBorder ? '!border-l-2 !border-l-slate-300' : ''}`}>
+                            <div
+                              key={p.week}
+                              className={`flex-1 min-w-[68px] border-r border-slate-100 last:border-r-0 p-1.5 flex flex-col items-center justify-center ${isMonthBorder ? '!border-l-2 !border-l-slate-300' : ''}`}
+                              onMouseEnter={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setTooltip({ x: rect.left + rect.width / 2, y: rect.bottom + 4, week: p.week, p });
+                              }}
+                              onMouseLeave={() => setTooltip(null)}
+                            >
                               <div className="text-[11px] font-bold text-primary">P×{count}</div>
                               <div className="flex gap-0.5 mt-0.5">
                                 {p.p1.map((t, i) => (
@@ -186,6 +202,28 @@ export default function HistoryPanel({ user, history }: Props) {
               ))}
             </div>
           </Card>
+        </div>
+      )}
+
+      {/* Fixed tooltip */}
+      {tooltip && (
+        <div
+          className="fixed z-[200] bg-slate-800 text-slate-200 text-[11px] rounded-lg p-2.5 w-fit max-w-xs shadow-xl border border-slate-600 pointer-events-none whitespace-nowrap"
+          style={{ left: tooltip.x, top: tooltip.y, transform: 'translateX(-50%)' }}
+        >
+          <div className="font-bold mb-1.5 text-primary">{user.name} · {fmtWeek(tooltip.week)}</div>
+          {tooltip.p.p1.map((t, i) => t && (
+            <div key={i} className="flex gap-1 mb-0.5">
+              <span className="text-[10px] font-bold text-indigo-400 shrink-0">P1-{i + 1}</span>
+              <span>{t}</span>
+            </div>
+          ))}
+          {tooltip.p.p2 && (
+            <div className="flex gap-1 mt-0.5">
+              <span className="text-[10px] font-bold text-amber-400 shrink-0">P2</span>
+              <span>{tooltip.p.p2}</span>
+            </div>
+          )}
         </div>
       )}
     </div>

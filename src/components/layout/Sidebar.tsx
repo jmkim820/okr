@@ -17,6 +17,7 @@ export default function Sidebar() {
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
   const [editingUser, setEditingUser] = useState<any>(null);
+  const [collapsedTeams, setCollapsedTeams] = useState<Set<string>>(new Set());
 
   if (!currentUser) return null;
 
@@ -117,22 +118,6 @@ export default function Sidebar() {
       {/* Team Manager — superadmin 전용 */}
       {isSuperAdmin && <TeamManager />}
 
-      {/* 경영진 목록 — users 중 role === 'superadmin' */}
-      {users.filter((u) => u.role === 'superadmin').length > 0 && (
-        <>
-          <div className="border-t border-slate-700 pt-2.5 px-3 pb-1 text-[11px] text-slate-600 font-bold tracking-wider">👑 경영진</div>
-          {users.filter((u) => u.role === 'superadmin').map((u) => (
-            <div key={u.id} className="mx-2 rounded-lg py-1.5 px-2 flex items-center gap-1.5">
-              <div className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style={{ background: roleColor('superadmin') }}>
-                {u.name[0]}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-semibold text-slate-200 truncate">{u.name}</div>
-              </div>
-            </div>
-          ))}
-        </>
-      )}
 
       {/* User List Header */}
       <div className="border-t border-slate-700 pt-2.5 px-3 pb-1 text-[11px] text-slate-600 font-bold tracking-wider">
@@ -167,7 +152,19 @@ export default function Sidebar() {
             return aAdmin - bAdmin;
           });
         }
-        const orderedTeams = [...teams.filter((t) => teamGroups[t]), ...Object.keys(teamGroups).filter((t) => !teams.includes(t))];
+        const TEAM_ORDER = ['앱개발팀', '웹개발팀', '고객지원팀', '컨설팅팀'];
+        const orderedTeams = [
+          ...TEAM_ORDER.filter((t) => teamGroups[t]),
+          ...Object.keys(teamGroups).filter((t) => !TEAM_ORDER.includes(t)),
+        ];
+
+        const toggleTeam = (team: string) => {
+          setCollapsedTeams((prev) => {
+            const next = new Set(prev);
+            next.has(team) ? next.delete(team) : next.add(team);
+            return next;
+          });
+        };
 
         const renderUser = (u: typeof users[0]) => {
           const canAccess = true; // 전체 열람 가능
@@ -232,16 +229,23 @@ export default function Sidebar() {
           </div>
         );};
 
-        return orderedTeams.map((team) => (
-          <div key={team} className="mb-1">
-            <div className="flex items-center gap-1.5 px-3 pt-2 pb-1">
-              <div className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: '#64748b' }} />
-              <span className="text-[11px] font-bold tracking-wider" style={{ color: '#64748b' }}>{team}</span>
-              <span className="text-[10px] text-slate-600">{teamGroups[team].length}</span>
+        return orderedTeams.map((team) => {
+          const isCollapsed = collapsedTeams.has(team);
+          return (
+            <div key={team} className="mb-1">
+              <div
+                className="flex items-center gap-1.5 px-3 pt-2 pb-1 cursor-pointer hover:bg-slate-700/30 rounded-md mx-1 select-none"
+                onClick={() => toggleTeam(team)}
+              >
+                <span className="text-[10px] text-slate-500 w-3 shrink-0">{isCollapsed ? '▶' : '▼'}</span>
+                <div className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: '#64748b' }} />
+                <span className="text-[11px] font-bold tracking-wider" style={{ color: '#64748b' }}>{team}</span>
+                <span className="text-[10px] text-slate-600">{teamGroups[team].length}</span>
+              </div>
+              {!isCollapsed && teamGroups[team].map(renderUser)}
             </div>
-            {teamGroups[team].map(renderUser)}
-          </div>
-        ));
+          );
+        });
       })()}
 
       {/* Add user — superadmin 전용 */}

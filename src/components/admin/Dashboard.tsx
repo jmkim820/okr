@@ -1,14 +1,15 @@
-import type { User, UserDataMap } from '../../types';
+import type { User } from '../../types';
 import { roleColor, levelColor, getMondayStr, fmtWeek } from '../../lib/utils';
+import { useStore } from '../../stores/useStore';
 import Card from '../ui/Card';
 
 interface Props {
   users: User[];
   teams: string[];
-  userData: UserDataMap;
 }
 
-export default function Dashboard({ users, teams, userData }: Props) {
+export default function Dashboard({ users, teams }: Props) {
+  const userData = useStore((s) => s.userData);
   const thisMonday = getMondayStr();
 
   // 전체 통계

@@ -11,23 +11,24 @@ import Dashboard from './components/admin/Dashboard';
 import LeavePanel from './components/leave/LeavePanel';
 import Toast from './components/ui/Toast';
 
+const defaultUserData = { current: { okr: { objective: '', level: 0, startDate: '', endDate: '', krs: [] as any[] }, priorities: [] as any[] }, history: [] as any[] };
+
 export default function App() {
   const {
     loading, initApp,
-    currentUser, users, teams, userData,
+    currentUser, users, teams,
     activeTab, viewUserId,
     saveOkr, savePriorities, archiveQuarter,
   } = useStore();
 
+  // targetId 계산 (hook 순서 보장을 위해 early return 전에 배치)
+  const targetId = viewUserId || currentUser?.id || '';
+  // 대상 유저의 데이터만 선택적으로 구독 → 다른 유저 변경 시 리렌더 안 됨
+  const targetData = useStore((s) => s.userData[targetId]) || defaultUserData;
+
   useEffect(() => {
     initApp();
   }, [initApp]);
-
-  const isSuperAdmin = currentUser?.role === 'superadmin';
-  const isAdmin = currentUser?.role === 'admin' || isSuperAdmin;
-
-  const viewingOther = isSuperAdmin && viewUserId && viewUserId !== currentUser?.id;
-  const showSelectPrompt = isSuperAdmin && !viewingOther && (activeTab === 'okr' || activeTab === 'priority');
 
   if (loading) {
     return (
@@ -39,10 +40,14 @@ export default function App() {
 
   if (!currentUser) return <LoginPage />;
 
+  const isSuperAdmin = currentUser.role === 'superadmin';
+  const isAdmin = currentUser.role === 'admin' || isSuperAdmin;
   const myTeam = currentUser.team;
 
-  // 전체 열람 가능 (읽기전용)
-  const canView = (_userId: string) => true;
+  const viewingOther = isSuperAdmin && viewUserId && viewUserId !== currentUser.id;
+  const showSelectPrompt = isSuperAdmin && !viewingOther && (activeTab === 'okr' || activeTab === 'priority');
+
+  const targetUser = users.find((u) => u.id === targetId) || currentUser;
 
   // superadmin: 전체 수정, admin: 같은 팀만 수정, user: 본인만
   const canEdit = (userId: string) => {
@@ -53,11 +58,6 @@ export default function App() {
     }
     return userId === currentUser.id;
   };
-
-  const rawTargetId = viewUserId || currentUser.id;
-  const targetId = canView(rawTargetId) ? rawTargetId : currentUser.id;
-  const targetUser = users.find((u) => u.id === targetId) || currentUser;
-  const targetData = userData[targetId] || { current: { okr: { objective: '', level: 0, startDate: '', endDate: '', krs: [] }, priorities: [] }, history: [] };
 
   // 간트차트: admin 이상 전체, user 같은 팀
   const teamUsers = (isAdmin ? users : users.filter((u) => u.team === myTeam)).filter((u) => u.role !== 'superadmin');
@@ -106,11 +106,10 @@ export default function App() {
           {activeTab === 'gantt' && (
             <GanttPanel
               users={teamUsers}
-              userData={userData}
             />
           )}
           {activeTab === 'dashboard' && isSuperAdmin && (
-            <Dashboard users={users.filter((u) => u.role !== 'superadmin')} teams={teams} userData={userData} />
+            <Dashboard users={users.filter((u) => u.role !== 'superadmin')} teams={teams} />
           )}
           {activeTab === 'leave' && (
             <LeavePanel />

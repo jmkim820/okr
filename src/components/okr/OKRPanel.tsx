@@ -18,9 +18,11 @@ export default function OKRPanel({ user, data, onSaveOkr, onArchive }: Props) {
   const [form, setForm] = useState<OKR>(data.current.okr);
   const readOnly = !onSaveOkr;
 
+  // 값 기반 비교로 다른 유저의 변경에 의한 불필요한 폼 리셋 방지
+  const okrJson = JSON.stringify(data.current.okr);
   useEffect(() => {
     setForm(data.current.okr);
-  }, [user.id, data.current.okr]);
+  }, [user.id, okrJson]);
 
   const setKr = (i: number, field: string, value: string | number) =>
     setForm((p) => {
