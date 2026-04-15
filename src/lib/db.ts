@@ -3,7 +3,7 @@ import {
   collection, writeBatch, onSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { User, UserData, UserDataMap, LeaveRequest, LeaveAllocation } from '../types';
+import type { User, UserData, UserDataMap, LeaveRequest, LeaveAllocation, LeaveLog } from '../types';
 
 // ── Firestore 활성화 여부 ────────────────────────────────
 // .env에 projectId가 없으면 인메모리 모드(시드 데이터)로 동작
@@ -16,6 +16,7 @@ const TEAMS_DOC = 'okr_config/teams';
 const USER_DATA_COL = 'okr_userData';
 const LEAVES_COL = 'okr_leaves';
 const LEAVE_ALLOC_COL = 'okr_leaveAllocations';
+const LEAVE_LOG_COL = 'okr_leaveLogs';
 
 // ── Users ────────────────────────────────────────────────
 export async function loadUsers(): Promise<User[]> {
@@ -132,6 +133,23 @@ export async function loadLeaveAllocations(): Promise<LeaveAllocation[]> {
 export async function saveLeaveAllocation(alloc: LeaveAllocation): Promise<void> {
   const docId = `${alloc.userId}_${alloc.year}`;
   await setDoc(doc(db, LEAVE_ALLOC_COL, docId), alloc);
+}
+
+// ── Leave Logs ──────────────────────────────────────────
+export async function saveLeaveLog(log: LeaveLog): Promise<void> {
+  const { id, ...data } = log;
+  await setDoc(doc(db, LEAVE_LOG_COL, id), data);
+}
+
+export async function loadLeaveLogs(): Promise<LeaveLog[]> {
+  const snap = await getDocs(collection(db, LEAVE_LOG_COL));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as LeaveLog);
+}
+
+export function onLeaveLogsChange(callback: (logs: LeaveLog[]) => void): () => void {
+  return onSnapshot(collection(db, LEAVE_LOG_COL), (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as LeaveLog));
+  });
 }
 
 // ── 시드 데이터 일괄 업로드 ──────────────────────────────

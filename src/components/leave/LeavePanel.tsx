@@ -3,13 +3,14 @@ import { useStore } from '../../stores/useStore';
 import Card from '../ui/Card';
 import * as XLSX from 'xlsx';
 import type { LeaveRequest } from '../../types';
+import { isAlimtalkEnabled, getNotifyPhones, sendLeaveNotification } from '../../lib/alimtalk';
 
 const MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 export default function LeavePanel() {
   const {
     currentUser, users,
-    leaveRequests, leaveAllocations,
+    leaveRequests, leaveAllocations, leaveLogs,
     addLeaveRequest, updateLeaveRequest,
     approveLeave, rejectLeave, deleteLeaveRequest,
     requestDeleteLeave, approveDeleteRequest,
@@ -25,6 +26,14 @@ export default function LeavePanel() {
   const [editAllocUserId, setEditAllocUserId] = useState<string | null>(null);
   const [editAllocValue, setEditAllocValue] = useState('');
   const [editingLeave, setEditingLeave] = useState<{ id: string; year: number; month: number; reason: string; dates: Map<string, 'full' | 'am' | 'pm'>; calYear: number; calMonth: number } | null>(null);
+  const [showLogModal, setShowLogModal] = useState(false);
+
+  type LogFilterType = 'action' | 'date' | 'name';
+  type LogFilterOp = 'is' | 'is_not' | 'before' | 'after' | 'between' | 'contains';
+  interface LogFilter { id: number; type: LogFilterType; op: LogFilterOp; value: string; value2?: string; values?: Set<string> }
+  const [logFilters, setLogFilters] = useState<LogFilter[]>([]);
+  const [logFilterCounter, setLogFilterCounter] = useState(0);
+  const [openFilterPopup, setOpenFilterPopup] = useState<number | null>(null);
 
   // New request form
   const [reqTargetUserId, setReqTargetUserId] = useState('');
@@ -230,6 +239,20 @@ export default function LeavePanel() {
       addLeaveRequest(req);
     }
 
+    // 알림톡 발송 (대리 신청이 아닌 경우만)
+    if (!isByProxy && isAlimtalkEnabled()) {
+      const applicant = users.find((u) => u.id === targetId) || currentUser;
+      const teamAdminPhones = users
+        .filter((u) => u.role === 'admin' && u.team === applicant.team && u.phone)
+        .map((u) => u.phone!);
+      const phones = getNotifyPhones(teamAdminPhones);
+      sendLeaveNotification({
+        name: applicant.name,
+        message: '신청',
+        recipientPhones: phones,
+      }).catch(console.error);
+    }
+
     setShowRequestModal(false);
     setReqTargetUserId('');
     setReqSelectedDates(new Map());
@@ -358,6 +381,14 @@ export default function LeavePanel() {
                 <option key={y} value={y}>{y}년</option>
               ))}
             </select>
+            {isAdmin && (
+              <button
+                onClick={() => setShowLogModal(true)}
+                className="bg-slate-600 text-white border-none rounded-lg px-4 py-1.5 text-sm font-semibold cursor-pointer hover:bg-slate-700 transition-colors"
+              >
+                📋 로그
+              </button>
+            )}
             {!isArchived && (
               <button
                 onClick={() => setShowRequestModal(true)}
@@ -532,6 +563,12 @@ export default function LeavePanel() {
               엑셀 내보내기
             </button>
           )}
+          <button
+            onClick={() => setShowLogModal(true)}
+            className="bg-slate-600 text-white border-none rounded-lg px-4 py-1.5 text-sm font-semibold cursor-pointer hover:bg-slate-700 transition-colors"
+          >
+            📋 로그
+          </button>
           {!isArchived && (
             <button
               onClick={() => setShowRequestModal(true)}
@@ -736,6 +773,237 @@ export default function LeavePanel() {
       {showPendingModal && renderPendingModal()}
       {showBatchAllocModal && renderBatchAllocModal()}
       {editingLeave && renderEditModal()}
+
+      {/* 로그 모달 */}
+      {showLogModal && (() => {
+        const actionDefs = [
+          { key: 'request', text: '신청', color: 'bg-blue-100 text-blue-700' },
+          { key: 'modify', text: '수정', color: 'bg-amber-100 text-amber-700' },
+          { key: 'approve', text: '승인', color: 'bg-green-100 text-green-700' },
+          { key: 'reject', text: '반려', color: 'bg-red-100 text-red-700' },
+          { key: 'delete', text: '삭제', color: 'bg-slate-100 text-slate-600' },
+          { key: 'delete_request', text: '삭제요청', color: 'bg-orange-100 text-orange-700' },
+          { key: 'delete_approve', text: '삭제승인', color: 'bg-slate-100 text-slate-600' },
+        ];
+        const actionLabel: Record<string, { text: string; color: string }> = {};
+        actionDefs.forEach((d) => { actionLabel[d.key] = { text: d.text, color: d.color }; });
+
+        const typeLabel: Record<LogFilterType, string> = { action: '상태', date: '날짜', name: '이름' };
+        const opsByType: Record<LogFilterType, { key: LogFilterOp; label: string }[]> = {
+          action: [{ key: 'is', label: '=' }, { key: 'is_not', label: '≠' }],
+          date: [{ key: 'is', label: '=' }, { key: 'before', label: '이전' }, { key: 'after', label: '이후' }, { key: 'between', label: '범위' }],
+          name: [{ key: 'contains', label: '포함' }],
+        };
+
+        const addFilter = (type: LogFilterType) => {
+          const defaultOp = opsByType[type][0].key;
+          const id = logFilterCounter;
+          setLogFilterCounter((c) => c + 1);
+          setLogFilters((f) => [...f, { id, type, op: defaultOp, value: '', ...(type === 'action' ? { values: new Set<string>() } : {}) }]);
+          setOpenFilterPopup(id);
+        };
+        const updateFilter = (id: number, patch: Partial<LogFilter>) => {
+          setLogFilters((f) => f.map((r) => r.id === id ? { ...r, ...patch } : r));
+        };
+        const removeFilter = (id: number) => {
+          setLogFilters((f) => f.filter((r) => r.id !== id));
+        };
+
+        // 필터 적용
+        const filtered = [...leaveLogs]
+          .filter((log) => {
+            for (const f of logFilters) {
+              if (f.type === 'action') {
+                if (!f.values || f.values.size === 0) continue;
+                if (f.op === 'is' && !f.values.has(log.action)) return false;
+                if (f.op === 'is_not' && f.values.has(log.action)) return false;
+              } else if (f.type === 'date') {
+                if (!f.value) continue;
+                const logDate = log.timestamp.slice(0, 10);
+                if (f.op === 'is' && logDate !== f.value) return false;
+                if (f.op === 'before' && logDate >= f.value) return false;
+                if (f.op === 'after' && logDate <= f.value) return false;
+                if (f.op === 'between') {
+                  if (f.value && logDate < f.value) return false;
+                  if (f.value2 && logDate > f.value2) return false;
+                }
+              } else if (f.type === 'name') {
+                const kw = f.value.trim().toLowerCase();
+                if (kw && !log.detail.toLowerCase().includes(kw) && !log.actorName.toLowerCase().includes(kw)) return false;
+              }
+            }
+            return true;
+          })
+          .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+        const closeLog = () => {
+          setShowLogModal(false);
+          setLogFilters([]);
+          setOpenFilterPopup(null);
+        };
+
+        const filterSummary = (f: LogFilter): string => {
+          if (f.type === 'action') {
+            if (!f.values || f.values.size === 0) return `${f.op === 'is' ? '=' : '≠'} …`;
+            const labels = [...f.values].map((v) => actionDefs.find((d) => d.key === v)?.text || v).join(', ');
+            return `${f.op === 'is' ? '=' : '≠'} ${labels}`;
+          }
+          if (f.type === 'date') {
+            const opLabel = opsByType.date.find((o) => o.key === f.op)?.label || '';
+            if (f.op === 'between') return `${f.value || '…'} ~ ${f.value2 || '…'}`;
+            return `${opLabel} ${f.value || '…'}`;
+          }
+          return `포함 "${f.value || '…'}"`;
+        };
+
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]" onClick={closeLog}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+              {/* 헤더 */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+                <h3 className="font-bold text-slate-800 text-base">📋 휴가 로그</h3>
+                <button onClick={closeLog} className="text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer text-lg">✕</button>
+              </div>
+
+              {/* 필터 바 */}
+              <div className="px-6 py-3 border-b border-slate-100">
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* 필터 칩들 */}
+                  {logFilters.map((f) => (
+                    <div key={f.id} className="relative">
+                      <button
+                        onClick={() => setOpenFilterPopup(openFilterPopup === f.id ? null : f.id)}
+                        className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs cursor-pointer transition-colors"
+                      >
+                        <span className="font-semibold text-slate-600">{typeLabel[f.type]}</span>
+                        <span className="text-slate-400">{filterSummary(f)}</span>
+                        <span onClick={(e) => { e.stopPropagation(); removeFilter(f.id); }} className="ml-1 text-slate-400 hover:text-red-500">×</span>
+                      </button>
+
+                      {/* 필터 팝오버 */}
+                      {openFilterPopup === f.id && (
+                        <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl p-3 z-10 min-w-[260px]" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-semibold text-slate-500 w-10">{typeLabel[f.type]}</span>
+                            <select
+                              value={f.op}
+                              onChange={(e) => updateFilter(f.id, { op: e.target.value as LogFilterOp })}
+                              className="border border-slate-200 rounded-md px-2 py-1 text-xs outline-none"
+                            >
+                              {opsByType[f.type].map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                            </select>
+                          </div>
+                          {f.type === 'action' && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {actionDefs.map((d) => {
+                                const checked = f.values?.has(d.key) || false;
+                                return (
+                                  <label key={d.key} className={`flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer transition-colors ${checked ? 'ring-2 ring-blue-400 ' + d.color : d.color + ' opacity-50 hover:opacity-80'}`}>
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => {
+                                        const next = new Set(f.values || []);
+                                        next.has(d.key) ? next.delete(d.key) : next.add(d.key);
+                                        updateFilter(f.id, { values: next });
+                                      }}
+                                      className="w-3 h-3 accent-blue-600 cursor-pointer"
+                                    />
+                                    <span className="text-[11px] font-semibold">{d.text}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {f.type === 'date' && (
+                            <div className="flex items-center gap-2">
+                              <input type="date" value={f.value} onChange={(e) => updateFilter(f.id, { value: e.target.value })} className="border border-slate-200 rounded-md px-2 py-1 text-xs outline-none flex-1" />
+                              {f.op === 'between' && (
+                                <>
+                                  <span className="text-slate-400 text-xs">~</span>
+                                  <input type="date" value={f.value2 || ''} onChange={(e) => updateFilter(f.id, { value2: e.target.value })} className="border border-slate-200 rounded-md px-2 py-1 text-xs outline-none flex-1" />
+                                </>
+                              )}
+                            </div>
+                          )}
+                          {f.type === 'name' && (
+                            <input
+                              value={f.value}
+                              onChange={(e) => updateFilter(f.id, { value: e.target.value })}
+                              placeholder="이름 입력..."
+                              className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs outline-none"
+                              autoFocus
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* + 필터 추가 버튼 */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setOpenFilterPopup(openFilterPopup === -1 ? null : -1)}
+                      className="flex items-center gap-1 bg-transparent hover:bg-slate-100 border border-dashed border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-500 cursor-pointer transition-colors"
+                    >
+                      + 필터 추가
+                    </button>
+                    {openFilterPopup === -1 && (
+                      <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl py-1 z-10 min-w-[120px]">
+                        {(['action', 'date', 'name'] as LogFilterType[]).map((type) => (
+                          <button
+                            key={type}
+                            onClick={() => addFilter(type)}
+                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 bg-transparent border-none cursor-pointer"
+                          >
+                            {typeLabel[type]}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {logFilters.length > 0 && (
+                    <button
+                      onClick={() => setLogFilters([])}
+                      className="text-[11px] text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer"
+                    >
+                      모두 지우기
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* 결과 */}
+              <div className="flex-1 overflow-y-auto px-6 py-4">
+                <div className="text-[11px] text-slate-400 mb-3">{filtered.length}건</div>
+                {filtered.length === 0 ? (
+                  <div className="text-center text-slate-400 py-10">
+                    {leaveLogs.length === 0 ? '로그가 없습니다.' : '조건에 맞는 로그가 없습니다.'}
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {filtered.map((log) => {
+                      const badge = actionLabel[log.action] || { text: log.action, color: 'bg-slate-100 text-slate-600' };
+                      const date = new Date(log.timestamp);
+                      const timeStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                      return (
+                        <div key={log.id} className="flex items-start gap-3 py-2.5 border-b border-slate-100 last:border-none">
+                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md shrink-0 mt-0.5 ${badge.color}`}>{badge.text}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm text-slate-700">{log.detail}</div>
+                            <div className="text-[11px] text-slate-400 mt-0.5">처리: {log.actorName} · {timeStr}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Fixed tooltip */}
       {tooltip && (
@@ -1050,18 +1318,71 @@ export default function LeavePanel() {
       if (editingLeave.dates.size === 0) { showToast('날짜를 선택해주세요.', 'error'); return; }
       const sorted = [...editingLeave.dates.entries()].sort((a, b) => a[0].localeCompare(b[0]));
       const typeLabel = (t: 'full' | 'am' | 'pm') => t === 'full' ? '' : t === 'am' ? '(오전)' : '(오후)';
-      const daysStr = sorted.map(([d, t]) => `${parseInt(d.slice(8, 10))}${typeLabel(t)}`).join(', ');
 
-      // 승인 건 수정 시 → pending으로 전환 + 원본 저장 (재승인 필요)
+      // 월별로 그룹핑
+      const byMonth: Record<string, { year: number; month: number; entries: [string, 'full' | 'am' | 'pm'][] }> = {};
+      for (const [dateKey, type] of sorted) {
+        const yr = parseInt(dateKey.slice(0, 4));
+        const mon = parseInt(dateKey.slice(5, 7));
+        const key = `${yr}-${mon}`;
+        if (!byMonth[key]) byMonth[key] = { year: yr, month: mon, entries: [] };
+        byMonth[key].entries.push([dateKey, type]);
+      }
+      const monthGroups = Object.values(byMonth);
+
       const req = leaveRequests.find((r) => r.id === editingLeave.id);
       const wasApproved = req?.status === 'approved';
 
+      // 첫 번째 월: 기존 레코드 업데이트
+      const first = monthGroups[0];
+      const firstDaysStr = first.entries.map(([d, t]) => `${parseInt(d.slice(8, 10))}${typeLabel(t)}`).join(', ');
+      const firstAmount = first.entries.reduce((s, [, t]) => s + (t === 'full' ? 1 : 0.5), 0);
       updateLeaveRequest(editingLeave.id, {
-        days: daysStr,
-        amount: editTotalAmount,
+        year: first.year,
+        month: first.month,
+        days: firstDaysStr,
+        amount: firstAmount,
         reason: editingLeave.reason.trim(),
         ...(wasApproved ? { status: 'pending' as const, approvedBy: null, approvedByName: null, originalDays: req.days, originalAmount: req.amount } : {}),
       });
+
+      // 나머지 월: 새 레코드로 추가
+      for (let i = 1; i < monthGroups.length; i++) {
+        const grp = monthGroups[i];
+        const daysStr = grp.entries.map(([d, t]) => `${parseInt(d.slice(8, 10))}${typeLabel(t)}`).join(', ');
+        const amount = grp.entries.reduce((s, [, t]) => s + (t === 'full' ? 1 : 0.5), 0);
+        const newReq: LeaveRequest = {
+          id: 'lv' + Date.now() + '_' + grp.month,
+          userId: req?.userId || currentUser!.id,
+          year: grp.year,
+          month: grp.month,
+          days: daysStr,
+          amount,
+          reason: editingLeave.reason.trim(),
+          status: 'pending',
+          requestedAt: new Date().toISOString(),
+          approvedBy: null,
+          approvedByName: null,
+        };
+        addLeaveRequest(newReq);
+      }
+
+      // 수정 알림톡 발송
+      if (req && isAlimtalkEnabled()) {
+        const applicant = users.find((u) => u.id === req.userId);
+        if (applicant) {
+          const teamAdminPhones = users
+            .filter((u) => u.role === 'admin' && u.team === applicant.team && u.phone)
+            .map((u) => u.phone!);
+          const phones = getNotifyPhones(teamAdminPhones);
+          sendLeaveNotification({
+            name: applicant.name,
+            message: '휴가 수정',
+            recipientPhones: phones,
+          }).catch(console.error);
+        }
+      }
+
       setEditingLeave(null);
     };
 

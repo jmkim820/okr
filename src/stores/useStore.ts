@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import type { User, UserData, UserDataMap, OKR, WeeklyPriority, LeaveRequest, LeaveAllocation } from '../types';
+import type { User, UserData, UserDataMap, OKR, WeeklyPriority, LeaveRequest, LeaveAllocation, LeaveLog } from '../types';
 import { makeUserData, makeOkr, getMondayStr, getQuarter, setCustomTeamColors } from '../lib/utils';
 import { SEED_USERS, SEED_TEAMS, SEED_USER_DATA } from '../lib/seed';
 import * as DB from '../lib/db';
@@ -70,6 +70,10 @@ interface AppState {
   // Bulk leave allocation
   batchSetLeaveAllocations: (year: number, allocations: { userId: string; total: number }[]) => void;
 
+  // Leave Logs
+  leaveLogs: LeaveLog[];
+  addLeaveLog: (action: LeaveLog['action'], leaveId: string, userId: string, detail: string) => void;
+
   // Helpers
   getTargetData: (userId: string) => UserData;
   getSuperAdmin: () => User;
@@ -110,13 +114,14 @@ export const useStore = create<AppState>((set, get) => ({
 
     try {
       // Firestore에서 데이터 로드
-      const [users, teams, teamColors, userData, leaveRequests, leaveAllocations] = await Promise.all([
+      const [users, teams, teamColors, userData, leaveRequests, leaveAllocations, leaveLogs] = await Promise.all([
         DB.loadUsers(),
         DB.loadTeams(),
         DB.loadTeamColors(),
         DB.loadAllUserData(),
         DB.loadLeaveRequests(),
         DB.loadLeaveAllocations(),
+        DB.loadLeaveLogs(),
       ]);
 
       let loadedUsers = users;
@@ -131,7 +136,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       setCustomTeamColors(teamColors);
-      set({ users: loadedUsers, teams: loadedTeams, teamColors, userData: loadedUserData, leaveRequests, leaveAllocations });
+      set({ users: loadedUsers, teams: loadedTeams, teamColors, userData: loadedUserData, leaveRequests, leaveAllocations, leaveLogs });
 
       // Firebase Auth 세션 확인 → 자동 로그인
       await new Promise<void>((resolve) => {
@@ -151,6 +156,7 @@ export const useStore = create<AppState>((set, get) => ({
       // 실시간 리스너: 휴가 관련만 등록
       DB.onLeaveRequestsChange((requests) => set({ leaveRequests: requests }));
       DB.onLeaveAllocationsChange((allocs) => set({ leaveAllocations: allocs }));
+      DB.onLeaveLogsChange((logs) => set({ leaveLogs: logs }));
 
       set({ loading: false, initialized: true });
     } catch (err) {
@@ -347,39 +353,55 @@ export const useStore = create<AppState>((set, get) => ({
   // ── Leave ──────────────────────────────────────────────
   leaveRequests: [],
   leaveAllocations: [],
+  leaveLogs: [],
 
   addLeaveRequest: (req) => {
     set((s) => ({ leaveRequests: [...s.leaveRequests, req] }));
     DB.saveLeaveRequest(req).catch(console.error);
+    const userName = get().users.find((u) => u.id === req.userId)?.name || '';
+    const reasonStr = req.reason ? ` | 사유: ${req.reason}` : '';
+    get().addLeaveLog('request', req.id, req.userId, `${userName} - ${req.year}년 ${req.month}월 ${req.days}일 (${req.amount}일)${reasonStr}`);
     get().showToast('휴가 신청 완료');
   },
 
   updateLeaveRequest: (id, updates) => {
+    const before = get().leaveRequests.find((r) => r.id === id);
     set((s) => ({
       leaveRequests: s.leaveRequests.map((r) => r.id === id ? { ...r, ...updates } : r),
     }));
     const updated = get().leaveRequests.find((r) => r.id === id);
     if (updated) DB.saveLeaveRequest(updated).catch(console.error);
+    const userName = get().users.find((u) => u.id === updated?.userId)?.name || '';
+    const modReason = updated?.reason ? ` | 사유: ${updated.reason}` : '';
+    get().addLeaveLog('modify', id, updated?.userId || '', `${userName} - ${before?.year}년 ${before?.month}월 ${before?.days}일 → ${updated?.year}년 ${updated?.month}월 ${updated?.days}일 (${updated?.amount}일)${modReason}`);
     get().showToast('휴가 수정 완료');
   },
 
   requestDeleteLeave: (id) => {
+    const req = get().leaveRequests.find((r) => r.id === id);
     set((s) => ({
       leaveRequests: s.leaveRequests.map((r) => r.id === id ? { ...r, deleteRequested: true } : r),
     }));
     const updated = get().leaveRequests.find((r) => r.id === id);
     if (updated) DB.saveLeaveRequest(updated).catch(console.error);
+    const userName = get().users.find((u) => u.id === req?.userId)?.name || '';
+    const delReqReason = req?.reason ? ` | 사유: ${req.reason}` : '';
+    get().addLeaveLog('delete_request', id, req?.userId || '', `${userName} - ${req?.year}년 ${req?.month}월 ${req?.days}일 삭제 요청${delReqReason}`);
     get().showToast('삭제 요청 완료');
   },
 
   approveDeleteRequest: (id) => {
+    const req = get().leaveRequests.find((r) => r.id === id);
     set((s) => ({ leaveRequests: s.leaveRequests.filter((r) => r.id !== id) }));
     if (DB.isFirestoreEnabled()) DB.deleteLeaveRequest(id).catch(console.error);
+    const userName = get().users.find((u) => u.id === req?.userId)?.name || '';
+    get().addLeaveLog('delete_approve', id, req?.userId || '', `${userName} - ${req?.year}년 ${req?.month}월 ${req?.days}일 삭제 승인`);
     get().showToast('삭제 요청 승인 완료', 'error');
   },
 
   approveLeave: (id, approvedBy) => {
     const currentUser = get().currentUser;
+    const req = get().leaveRequests.find((r) => r.id === id);
     const approvedByName = currentUser?.name || approvedBy;
     const role = currentUser?.role;
     const label = role === 'superadmin' ? '경영진' : role === 'admin' ? '관리자' : '';
@@ -391,11 +413,14 @@ export const useStore = create<AppState>((set, get) => ({
     }));
     const updated = get().leaveRequests.find((r) => r.id === id);
     if (updated) DB.saveLeaveRequest(updated).catch(console.error);
+    const userName = get().users.find((u) => u.id === req?.userId)?.name || '';
+    get().addLeaveLog('approve', id, req?.userId || '', `${userName} - ${req?.year}년 ${req?.month}월 ${req?.days}일 승인 (${displayName})`);
     get().showToast('휴가 승인 완료');
   },
 
   rejectLeave: (id) => {
     const currentUser = get().currentUser;
+    const req = get().leaveRequests.find((r) => r.id === id);
     const rejectedByName = currentUser?.name || '';
     const role = currentUser?.role;
     const label = role === 'superadmin' ? '경영진' : role === 'admin' ? '관리자' : '';
@@ -407,12 +432,17 @@ export const useStore = create<AppState>((set, get) => ({
     }));
     const updated = get().leaveRequests.find((r) => r.id === id);
     if (updated) DB.saveLeaveRequest(updated).catch(console.error);
+    const userName = get().users.find((u) => u.id === req?.userId)?.name || '';
+    get().addLeaveLog('reject', id, req?.userId || '', `${userName} - ${req?.year}년 ${req?.month}월 ${req?.days}일 반려 (${displayName})`);
     get().showToast('휴가 반려 완료', 'error');
   },
 
   deleteLeaveRequest: (id) => {
+    const req = get().leaveRequests.find((r) => r.id === id);
     set((s) => ({ leaveRequests: s.leaveRequests.filter((r) => r.id !== id) }));
     if (DB.isFirestoreEnabled()) DB.deleteLeaveRequest(id).catch(console.error);
+    const userName = get().users.find((u) => u.id === req?.userId)?.name || '';
+    get().addLeaveLog('delete', id, req?.userId || '', `${userName} - ${req?.year}년 ${req?.month}월 ${req?.days}일 삭제`);
     get().showToast('휴가 신청 삭제', 'error');
   },
 
@@ -445,6 +475,22 @@ export const useStore = create<AppState>((set, get) => ({
       return { leaveAllocations: updated };
     });
     get().showToast(`${year}년 발생휴가 일괄 설정 완료`);
+  },
+
+  addLeaveLog: (action, leaveId, userId, detail) => {
+    const cur = get().currentUser;
+    const log: LeaveLog = {
+      id: 'log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      action,
+      leaveId,
+      userId,
+      actorId: cur?.id || '',
+      actorName: cur?.name || '',
+      detail,
+      timestamp: new Date().toISOString(),
+    };
+    set((s) => ({ leaveLogs: [...s.leaveLogs, log] }));
+    DB.saveLeaveLog(log).catch(console.error);
   },
 
   getTargetData: (userId) => {

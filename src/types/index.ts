@@ -8,6 +8,7 @@ export interface User {
   role: Role;
   pw?: string;
   joinDate?: string; // 입사일 (YYYY-MM-DD)
+  phone?: string; // 전화번호 (알림톡용)
 }
 
 export interface KeyResult {
@@ -72,4 +73,15 @@ export interface LeaveAllocation {
   userId: string;
   year: number;
   total: number; // 연간 발생휴가 일수
+}
+
+export interface LeaveLog {
+  id: string;
+  action: 'request' | 'modify' | 'approve' | 'reject' | 'delete' | 'delete_request' | 'delete_approve';
+  leaveId: string;
+  userId: string;       // 대상 (휴가 신청자)
+  actorId: string;      // 행위자
+  actorName: string;
+  detail: string;       // 요약 메시지
+  timestamp: string;    // ISO string
 }
