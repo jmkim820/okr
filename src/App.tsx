@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from './stores/useStore';
 import LoginPage from './pages/LoginPage';
 import Header from './components/layout/Header';
 import Sidebar from './components/layout/Sidebar';
 import OKRPanel from './components/okr/OKRPanel';
 import PriorityPanel from './components/weekly/PriorityPanel';
+import PresentationMode from './components/weekly/PresentationMode';
 import HistoryPanel from './components/okr/HistoryPanel';
 import GanttPanel from './components/gantt/GanttPanel';
 import Dashboard from './components/admin/Dashboard';
@@ -25,6 +26,8 @@ export default function App() {
   const targetId = viewUserId || currentUser?.id || '';
   // 대상 유저의 데이터만 선택적으로 구독 → 다른 유저 변경 시 리렌더 안 됨
   const targetData = useStore((s) => s.userData[targetId]) || defaultUserData;
+  const userData = useStore((s) => s.userData);
+  const [showPresentation, setShowPresentation] = useState(false);
 
   useEffect(() => {
     initApp();
@@ -85,20 +88,32 @@ export default function App() {
             )
           )}
           {activeTab === 'priority' && (
-            showSelectPrompt ? (
-              <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-                <div className="text-5xl mb-4">👈</div>
-                <div className="text-lg font-bold text-slate-500 mb-2">팀원을 선택해주세요</div>
-                <div className="text-sm">왼쪽 사이드바에서 팀원을 클릭하면 주간 우선순위를 확인할 수 있습니다.</div>
-              </div>
-            ) : (
-              <PriorityPanel
-                user={targetUser}
-                data={targetData}
-                canEdit={canEdit(targetId)}
-                onSave={(priorities) => savePriorities(targetId, priorities)}
-              />
-            )
+            <>
+              {(
+                <div className="flex justify-end mb-3">
+                  <button
+                    onClick={() => setShowPresentation(true)}
+                    className="bg-slate-800 text-white border-none rounded-lg px-4 py-2 cursor-pointer font-semibold text-[13px] hover:bg-slate-700 transition-colors"
+                  >
+                    🎤 발표 모드
+                  </button>
+                </div>
+              )}
+              {showSelectPrompt ? (
+                <div className="flex flex-col items-center justify-center py-24 text-slate-400">
+                  <div className="text-5xl mb-4">👈</div>
+                  <div className="text-lg font-bold text-slate-500 mb-2">팀원을 선택해주세요</div>
+                  <div className="text-sm">왼쪽 사이드바에서 팀원을 클릭하면 주간 우선순위를 확인할 수 있습니다.</div>
+                </div>
+              ) : (
+                <PriorityPanel
+                  user={targetUser}
+                  data={targetData}
+                  canEdit={canEdit(targetId)}
+                  onSave={(priorities) => savePriorities(targetId, priorities)}
+                />
+              )}
+            </>
           )}
           {activeTab === 'history' && (
             <HistoryPanel user={targetUser} history={targetData.history} />
@@ -117,6 +132,13 @@ export default function App() {
         </div>
       </div>
       <Toast />
+      {showPresentation && (
+        <PresentationMode
+          users={teamUsers}
+          userData={userData}
+          onClose={() => setShowPresentation(false)}
+        />
+      )}
     </div>
   );
 }

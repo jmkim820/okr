@@ -6,11 +6,15 @@ Axissoft 사내 OKR(Objective and Key Results) 관리 웹 솔루션.
 
 - **Google OAuth 로그인** — 회사 도메인 계정만 허용, 미등록 시 자동 등록
 - **OKR 설정** — Objective + Key Results 입력, 현수준 레벨(0~10), 분기 자동 계산
-- **주간 우선순위** — P1 3개 + P2 1개, KR 연결, 주간 선택 드롭다운
+- **주간 우선순위** — P1 3개 + P2 1개, KR 연결, 주간 선택 드롭다운, 줄바꿈 지원
+- **발표 모드** — 팀원별 슬라이드 발표, 키보드 조작, 주차 미리보기 패널, 지난주 토글
 - **분기 히스토리** — 종료된 분기 OKR/우선순위 보관 및 열람
 - **간트 차트** — 노션 스타일 월간 캘린더, OKR 기간 + 주간 P 바
+- **휴가 관리** — 휴가 신청/수정/승인/반려, 연차 할당, 엑셀 내보내기
+- **휴가 로그** — 모든 휴가 이벤트 자동 기록, 노션 스타일 필터 (상태/날짜/이름)
+- **알림톡** — NHN Cloud 연동, 휴가 신청/수정 시 관리자에게 카카오 알림톡 발송
 - **대시보드** — (superadmin) 전체 현황, 팀별 수치, 미등록자/저레벨 알림
-- **팀 관리** — 팀 CRUD, 색상 지정, 멤버 관리
+- **팀 관리** — 팀 CRUD, 색상 지정, 멤버 관리, 사이드바 팀 토글
 - **반응형** — 모바일/태블릿 대응
 
 ## 권한
@@ -42,6 +46,12 @@ VITE_FIREBASE_PROJECT_ID=
 VITE_FIREBASE_STORAGE_BUCKET=
 VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
+
+# NHN Cloud 알림톡 (선택)
+VITE_NHN_APPKEY=
+VITE_NHN_SECRET_KEY=
+VITE_NHN_SENDER_KEY=
+VITE_NHN_TEMPLATE_CODE=
 ```
 
 ## 빌드 & 배포
