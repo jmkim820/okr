@@ -134,7 +134,7 @@ export default function App() {
       <Toast />
       {showPresentation && (
         <PresentationMode
-          users={teamUsers}
+          users={users.filter((u) => u.role !== 'superadmin')}
           userData={userData}
           onClose={() => setShowPresentation(false)}
         />

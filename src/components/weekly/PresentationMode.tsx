@@ -161,7 +161,14 @@ export default function PresentationMode({ users, userData, onClose }: Props) {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
         <div className="flex items-center justify-between px-6 py-3 bg-slate-800 border-b border-slate-700">
-          <span className="text-white font-bold text-lg">📋 주간 우선순위 발표</span>
+          <div className="flex items-center gap-4">
+            <span className="text-white font-bold text-lg">📋 주간 우선순위 발표</span>
+            <div className="hidden sm:flex items-center gap-2 text-[11px] text-slate-500">
+              <span className="bg-slate-700 rounded px-1.5 py-0.5">←→</span> 팀원 이동
+              <span className="bg-slate-700 rounded px-1.5 py-0.5 ml-1">↑↓</span> 주차 이동
+              <span className="bg-slate-700 rounded px-1.5 py-0.5 ml-1">ESC</span> 닫기
+            </div>
+          </div>
           <div className="flex items-center gap-3">
             <span className="text-slate-400 text-sm">
               {idx + 1} / {orderedUsers.length}
