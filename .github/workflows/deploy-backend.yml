@@ -1,0 +1,53 @@
+name: Backend - Build & Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: ork-backend
+  CONTAINER_NAME: ork-backend
+  HOST_PORT: '3000'
+  CONTAINER_PORT: '3000'
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t ${{ env.IMAGE_NAME }}:latest .
+
+      - name: Stop & remove existing container (if any)
+        run: |
+          if [ "$(docker ps -aq -f name=^/${{ env.CONTAINER_NAME }}$)" ]; then
+            docker stop ${{ env.CONTAINER_NAME }} || true
+            docker rm ${{ env.CONTAINER_NAME }} || true
+          fi
+
+      - name: Run new container
+        run: |
+          docker run -d \
+            --name ${{ env.CONTAINER_NAME }} \
+            --restart unless-stopped \
+            -p ${{ env.HOST_PORT }}:${{ env.CONTAINER_PORT }} \
+            -e PORT=${{ env.CONTAINER_PORT }} \
+            -e CORS_ORIGINS="${{ secrets.CORS_ORIGINS }}" \
+            -e NHN_APPKEY="${{ secrets.NHN_APPKEY }}" \
+            -e NHN_SECRET_KEY="${{ secrets.NHN_SECRET_KEY }}" \
+            -e NHN_SENDER_KEY="${{ secrets.NHN_SENDER_KEY }}" \
+            -e NHN_TEMPLATE_CODE="${{ secrets.NHN_TEMPLATE_CODE }}" \
+            ${{ env.IMAGE_NAME }}:latest
+
+      - name: Cleanup dangling images
+        run: docker image prune -f

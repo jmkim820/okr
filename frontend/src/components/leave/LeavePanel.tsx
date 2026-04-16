@@ -1377,7 +1377,7 @@ export default function LeavePanel() {
           const phones = getNotifyPhones(teamAdminPhones);
           sendLeaveNotification({
             name: applicant.name,
-            message: '휴가 수정',
+            message: '수정',
             recipientPhones: phones,
           }).catch(console.error);
         }

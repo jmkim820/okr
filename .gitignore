@@ -7,15 +7,33 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Build artifacts
 node_modules
 dist
 dist-ssr
+.vite
 *.local
 
-# Environment variables
+# Environment variables (defensive — 각 서브 프로젝트에도 .gitignore 있음)
 .env
 .env.local
 .env.*.local
+
+# Frontend
+frontend/node_modules
+frontend/dist
+frontend/.vite
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Backend (NestJS)
+backend/node_modules
+backend/dist
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/serviceAccountKey.json
 
 # Editor directories and files
 .vscode/*

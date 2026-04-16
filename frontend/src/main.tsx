@@ -2,8 +2,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
-import { loadUsers, loadAllUserData, saveUserData } from './lib/db'
-import type { UserData } from './types'
+import { loadUsers, loadAllUserData, saveUserData } from './lib/db.ts'
+import type { UserData } from './types/index.ts'
 
 // 브라우저 콘솔에서 사용 가능한 유틸
 ;(window as any).listUsers = async () => {
