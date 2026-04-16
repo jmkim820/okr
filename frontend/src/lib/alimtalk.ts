@@ -1,6 +1,6 @@
 // 알림톡 발송 (NestJS 백엔드 경유 → NHN Cloud)
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 // 경영진 알림 대상 (변원섭)
 const EXEC_NOTIFY_PHONE = '01084414649';
