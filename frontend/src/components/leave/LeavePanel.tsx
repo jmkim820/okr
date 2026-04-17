@@ -14,7 +14,7 @@ export default function LeavePanel() {
     addLeaveRequest, updateLeaveRequest,
     approveLeave, rejectLeave, deleteLeaveRequest,
     requestDeleteLeave, approveDeleteRequest,
-    setLeaveAllocation, batchSetLeaveAllocations, showToast,
+    setLeaveAllocation, setSpecialLeave, batchSetLeaveAllocations, showToast,
   } = useStore();
 
   const now = new Date();
@@ -25,6 +25,8 @@ export default function LeavePanel() {
   const [showBatchAllocModal, setShowBatchAllocModal] = useState(false);
   const [editAllocUserId, setEditAllocUserId] = useState<string | null>(null);
   const [editAllocValue, setEditAllocValue] = useState('');
+  const [editSpecialUserId, setEditSpecialUserId] = useState<string | null>(null);
+  const [editSpecialValue, setEditSpecialValue] = useState('');
   const [editingLeave, setEditingLeave] = useState<{ id: string; year: number; month: number; reason: string; dates: Map<string, 'full' | 'am' | 'pm'>; calYear: number; calMonth: number } | null>(null);
   const [showLogModal, setShowLogModal] = useState(false);
 
@@ -143,6 +145,11 @@ export default function LeavePanel() {
     return getDefaultAllocation(userId, selectedYear);
   };
 
+  const getSpecialDays = (userId: string) => {
+    const alloc = leaveAllocations.find((a) => a.userId === userId && a.year === selectedYear);
+    return alloc?.special || 0;
+  };
+
   const getUsedDays = (userId: string) =>
     yearLeaves
       .filter((r) => r.userId === userId && r.status === 'approved')
@@ -189,14 +196,16 @@ export default function LeavePanel() {
   // Stats
   const totalEmployees = visibleUsers.length;
   const totalAllocation = visibleUsers.reduce((s, u) => s + getAllocation(u.id), 0);
+  const totalSpecial = visibleUsers.reduce((s, u) => s + getSpecialDays(u.id), 0);
   const totalUsed = visibleUsers.reduce((s, u) => s + getUsedDays(u.id), 0);
-  const totalRemaining = totalAllocation - totalUsed;
+  const totalRemaining = totalAllocation + totalSpecial - totalUsed;
 
   // My stats (for user view)
   const myAllocation = getAllocation(currentUser.id);
+  const mySpecial = getSpecialDays(currentUser.id);
   const myUsed = getUsedDays(currentUser.id);
   const myPending = getPendingDays(currentUser.id);
-  const myRemaining = myAllocation - myUsed;
+  const myRemaining = myAllocation + mySpecial - myUsed;
 
   // 지난 해 여부
   const isArchived = selectedYear < now.getFullYear();
@@ -269,13 +278,15 @@ export default function LeavePanel() {
   const handleExportExcel = () => {
     const rows = filteredUsers.map((u) => {
       const alloc = getAllocation(u.id);
+      const special = getSpecialDays(u.id);
       const used = getUsedDays(u.id);
       const row: Record<string, string | number> = {
         '이름': u.name,
         '입사일': u.joinDate || '-',
         '발생휴가': alloc,
+        '특별휴가': special,
         '사용일': used,
-        '잔여': alloc - used,
+        '잔여': alloc + special - used,
       };
       MONTHS.forEach((m) => {
         const ml = getMonthLeaves(u.id, m);
@@ -304,6 +315,24 @@ export default function LeavePanel() {
     if (isNaN(val) || val < 0) { showToast('올바른 숫자를 입력해주세요.', 'error'); return; }
     setLeaveAllocation(editAllocUserId, selectedYear, val);
     setEditAllocUserId(null);
+  };
+
+  const handleStartEditSpecial = (userId: string) => {
+    setEditSpecialUserId(userId);
+    setEditSpecialValue(String(getSpecialDays(userId)));
+  };
+
+  const handleSaveSpecial = () => {
+    if (!editSpecialUserId) return;
+    const val = parseFloat(editSpecialValue);
+    if (isNaN(val) || val < 0) { showToast('올바른 숫자를 입력해주세요.', 'error'); return; }
+    // allocation 레코드가 없으면 먼저 발생 값을 확정 (자동 계산값 보존)
+    const exists = leaveAllocations.find((a) => a.userId === editSpecialUserId && a.year === selectedYear);
+    if (!exists) {
+      setLeaveAllocation(editSpecialUserId, selectedYear, getDefaultAllocation(editSpecialUserId, selectedYear));
+    }
+    setSpecialLeave(editSpecialUserId, selectedYear, val);
+    setEditSpecialUserId(null);
   };
 
   const handleOpenBatchAlloc = () => {
@@ -401,11 +430,17 @@ export default function LeavePanel() {
         </div>
 
         {/* Stats cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className={`grid grid-cols-2 ${mySpecial > 0 ? 'sm:grid-cols-5' : 'sm:grid-cols-4'} gap-3`}>
           <Card className="!p-4 text-center">
             <div className="text-[11px] text-slate-500 mb-1">발생휴가</div>
             <div className="text-2xl font-bold text-slate-800">{myAllocation}<span className="text-sm text-slate-400">일</span></div>
           </Card>
+          {mySpecial > 0 && (
+            <Card className="!p-4 text-center">
+              <div className="text-[11px] text-slate-500 mb-1">특별휴가</div>
+              <div className="text-2xl font-bold text-slate-800">+{mySpecial}<span className="text-sm text-slate-400">일</span></div>
+            </Card>
+          )}
           <Card className="!p-4 text-center">
             <div className="text-[11px] text-slate-500 mb-1">사용일</div>
             <div className="text-2xl font-bold text-blue-600">{myUsed}<span className="text-sm text-slate-400">일</span></div>
@@ -620,6 +655,7 @@ export default function LeavePanel() {
                 <th className="text-left py-2 px-2 font-medium sticky left-0 bg-white z-10">이름</th>
                 <th className="text-center py-2 px-2 font-medium">입사일</th>
                 <th className="text-center py-2 px-2 font-medium">발생</th>
+                <th className="text-center py-2 px-2 font-medium">특별</th>
                 <th className="text-center py-2 px-2 font-medium">사용</th>
                 <th className="text-center py-2 px-2 font-medium">잔여</th>
                 {MONTHS.map((m) => (
@@ -630,8 +666,9 @@ export default function LeavePanel() {
             <tbody>
               {filteredUsers.map((u) => {
                 const alloc = getAllocation(u.id);
+                const special = getSpecialDays(u.id);
                 const used = getUsedDays(u.id);
-                const remaining = alloc - used;
+                const remaining = alloc + special - used;
                 return (
                   <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="py-2 px-2 font-semibold text-slate-800 sticky left-0 bg-white z-10">{u.name}</td>
@@ -657,6 +694,30 @@ export default function LeavePanel() {
                           title={isSuperAdmin ? '클릭하여 수정' : ''}
                         >
                           {alloc}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 px-2 text-center">
+                      {editSpecialUserId === u.id ? (
+                        <div className="flex items-center gap-1 justify-center">
+                          <input
+                            type="number"
+                            value={editSpecialValue}
+                            onChange={(e) => setEditSpecialValue(e.target.value)}
+                            className="w-14 border border-slate-300 rounded px-1 py-0.5 text-center text-xs"
+                            step="0.5"
+                            min="0"
+                          />
+                          <button onClick={handleSaveSpecial} className="text-blue-600 bg-transparent border-none cursor-pointer text-xs font-semibold">확인</button>
+                          <button onClick={() => setEditSpecialUserId(null)} className="text-slate-400 bg-transparent border-none cursor-pointer text-xs">취소</button>
+                        </div>
+                      ) : (
+                        <span
+                          className={isSuperAdmin ? 'cursor-pointer hover:text-blue-600 underline decoration-dashed' : ''}
+                          onClick={() => isSuperAdmin && handleStartEditSpecial(u.id)}
+                          title={isSuperAdmin ? '클릭하여 수정' : ''}
+                        >
+                          {special > 0 ? `+${special}` : '-'}
                         </span>
                       )}
                     </td>
@@ -1143,8 +1204,9 @@ export default function LeavePanel() {
                 {(() => {
                   const tid = (isSuperAdmin && reqTargetUserId) ? reqTargetUserId : currentUser!.id;
                   const tAlloc = getAllocation(tid);
+                  const tSpecial = getSpecialDays(tid);
                   const tUsed = getUsedDays(tid);
-                  const tRemaining = tAlloc - tUsed;
+                  const tRemaining = tAlloc + tSpecial - tUsed;
                   const afterUse = tRemaining - reqTotalAmount;
                   return (
                     <div className="bg-slate-50 rounded-lg px-3 py-2 mb-3 text-[11px]">

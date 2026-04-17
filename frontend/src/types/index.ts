@@ -73,6 +73,7 @@ export interface LeaveAllocation {
   userId: string;
   year: number;
   total: number; // 연간 발생휴가 일수
+  special?: number; // 특별휴가 (출산/결혼 등)
 }
 
 export interface LeaveLog {

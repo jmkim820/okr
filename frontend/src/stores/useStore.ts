@@ -66,6 +66,7 @@ interface AppState {
   approveDeleteRequest: (id: string) => void;
   deleteLeaveRequest: (id: string) => void;
   setLeaveAllocation: (userId: string, year: number, total: number) => void;
+  setSpecialLeave: (userId: string, year: number, special: number) => void;
 
   // Bulk leave allocation
   batchSetLeaveAllocations: (year: number, allocations: { userId: string; total: number }[]) => void;
@@ -457,6 +458,20 @@ export const useStore = create<AppState>((set, get) => ({
     const alloc = { userId, year, total };
     DB.saveLeaveAllocation(alloc).catch(console.error);
     get().showToast('연차 할당 수정 완료');
+  },
+
+  setSpecialLeave: (userId, year, special) => {
+    set((s) => {
+      const exists = s.leaveAllocations.find((a) => a.userId === userId && a.year === year);
+      const updated = exists
+        ? s.leaveAllocations.map((a) => (a.userId === userId && a.year === year ? { ...a, special } : a))
+        : [...s.leaveAllocations, { userId, year, total: 0, special }];
+      return { leaveAllocations: updated };
+    });
+    // 기존 alloc 찾아서 special만 업데이트해서 저장
+    const cur = get().leaveAllocations.find((a) => a.userId === userId && a.year === year);
+    if (cur) DB.saveLeaveAllocation(cur).catch(console.error);
+    get().showToast('특별휴가 수정 완료');
   },
 
   batchSetLeaveAllocations: (year, allocations) => {
