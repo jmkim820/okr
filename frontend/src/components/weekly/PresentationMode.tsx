@@ -101,6 +101,10 @@ export default function PresentationMode({ users, userData, onClose }: Props) {
       else if (e.key === 'ArrowUp') { e.preventDefault(); prevWeek(); }
       else if (e.key === 'ArrowDown') { e.preventDefault(); nextWeek(); }
       else if (e.key === 'Escape') onClose();
+      else if (e.key === 'f' || e.key === 'F') {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else document.documentElement.requestFullscreen().catch(() => {});
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -178,6 +182,7 @@ export default function PresentationMode({ users, userData, onClose }: Props) {
             <div className="hidden sm:flex items-center gap-2 text-[11px] text-slate-500">
               <span className="bg-slate-700 rounded px-1.5 py-0.5">←→</span> 팀원
               <span className="bg-slate-700 rounded px-1.5 py-0.5 ml-1">↑↓</span> 주차
+              <span className="bg-slate-700 rounded px-1.5 py-0.5 ml-1">F</span> 전체화면
               <span className="bg-slate-700 rounded px-1.5 py-0.5 ml-1">ESC</span> 닫기
             </div>
             <div
