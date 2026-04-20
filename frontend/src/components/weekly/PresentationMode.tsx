@@ -49,6 +49,9 @@ export default function PresentationMode({ users, userData, onClose }: Props) {
   const orderedUsers = orderUsers(users.filter((u) => u.role !== 'superadmin'));
   const [idx, setIdx] = useState(0);
   const [week, setWeek] = useState(getMondayStr());
+  const [showWeekPanel, setShowWeekPanel] = useState(false);
+  const [fontSize, setFontSize] = useState(35);
+  const adjustFont = (delta: number) => setFontSize((v) => Math.max(12, Math.min(60, v + delta)));
 
   const allWeeks = Array.from(
     new Set(
@@ -58,7 +61,7 @@ export default function PresentationMode({ users, userData, onClose }: Props) {
     )
   ).sort().reverse();
 
-  const [showPrevWeek, setShowPrevWeek] = useState(false);
+  const [showPrevWeek, setShowPrevWeek] = useState(true);
 
   const user = orderedUsers[idx];
   const data = user ? userData[user.id] : null;
@@ -105,14 +108,15 @@ export default function PresentationMode({ users, userData, onClose }: Props) {
 
   if (!user) return null;
 
-  const isNewTeam = idx === 0 || orderedUsers[idx - 1]?.team !== user.team;
 
   return (
     <div className="fixed inset-0 z-[2000] bg-slate-900 flex">
       {/* Left: 주차 미리보기 패널 */}
+      {showWeekPanel && (
       <div className="w-[240px] bg-slate-800 border-r border-slate-700 flex flex-col shrink-0">
-        <div className="px-4 py-3 border-b border-slate-700">
+        <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
           <span className="text-white font-bold text-sm">📅 주차 선택</span>
+          <button onClick={() => setShowWeekPanel(false)} className="text-slate-400 hover:text-white bg-transparent border-none cursor-pointer text-sm">✕</button>
         </div>
         <div className="flex-1 overflow-y-auto py-2 px-2 space-y-2">
           {allWeeks.map((w) => {
@@ -156,23 +160,63 @@ export default function PresentationMode({ users, userData, onClose }: Props) {
           })}
         </div>
       </div>
+      )}
 
       {/* Right: 메인 영역 */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <div className="flex items-center justify-between px-6 py-3 bg-slate-800 border-b border-slate-700">
-          <div className="flex items-center gap-4">
-            <span className="text-white font-bold text-lg">📋 주간 우선순위 발표</span>
+        <div className="grid grid-cols-3 items-center px-6 py-3 bg-slate-800 border-b border-slate-700">
+          {/* 좌: 메뉴 + 조작법 */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowWeekPanel((v) => !v)}
+              className="text-slate-400 hover:text-white bg-transparent border-none cursor-pointer text-lg"
+              title="주차 패널 토글"
+            >
+              ☰
+            </button>
             <div className="hidden sm:flex items-center gap-2 text-[11px] text-slate-500">
-              <span className="bg-slate-700 rounded px-1.5 py-0.5">←→</span> 팀원 이동
-              <span className="bg-slate-700 rounded px-1.5 py-0.5 ml-1">↑↓</span> 주차 이동
+              <span className="bg-slate-700 rounded px-1.5 py-0.5">←→</span> 팀원
+              <span className="bg-slate-700 rounded px-1.5 py-0.5 ml-1">↑↓</span> 주차
               <span className="bg-slate-700 rounded px-1.5 py-0.5 ml-1">ESC</span> 닫기
             </div>
+            <div
+              className="flex items-center gap-0.5 bg-slate-700 rounded-lg px-1 py-0.5"
+              onWheel={(e) => { e.preventDefault(); adjustFont(e.deltaY < 0 ? 1 : -1); }}
+            >
+              <button
+                onClick={() => adjustFont(-1)}
+                className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-600 bg-transparent border-none cursor-pointer rounded transition-colors text-sm"
+              >
+                −
+              </button>
+              <span className="text-white text-xs font-mono w-7 text-center select-none">{fontSize}</span>
+              <button
+                onClick={() => adjustFont(1)}
+                className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-600 bg-transparent border-none cursor-pointer rounded transition-colors text-sm"
+              >
+                +
+              </button>
+            </div>
+            {prevPriority && (
+              <button
+                onClick={() => setShowPrevWeek((v) => !v)}
+                className={`text-xs px-2.5 py-1 rounded-lg border-none cursor-pointer transition-colors ${
+                  showPrevWeek ? 'bg-slate-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'
+                }`}
+              >
+                지난주 {showPrevWeek ? '숨기기' : '보기'}
+              </button>
+            )}
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-slate-400 text-sm">
-              {idx + 1} / {orderedUsers.length}
-            </span>
+          {/* 중앙: 팀 + 이름 */}
+          <div className="flex items-center justify-center gap-2">
+            <span className="text-slate-500 text-sm">{user.team}</span>
+            <span className="text-white font-bold text-lg">{user.name}</span>
+            <span className="text-slate-500 text-sm">{idx + 1} / {orderedUsers.length}</span>
+          </div>
+          {/* 우: 닫기 */}
+          <div className="flex items-center justify-end">
             <button
               onClick={onClose}
               className="text-slate-400 hover:text-white text-xl bg-transparent border-none cursor-pointer px-2"
@@ -183,99 +227,91 @@ export default function PresentationMode({ users, userData, onClose }: Props) {
         </div>
 
         {/* Slide */}
-        <div className="flex-1 flex flex-col items-center justify-center px-8 overflow-y-auto py-6">
-          {isNewTeam && (
-            <div className="mb-4 px-5 py-1.5 rounded-full bg-slate-700 text-slate-300 text-sm font-semibold">
-              {user.team || '미배정'}
-            </div>
-          )}
-
-          <div className="flex items-center gap-4 mb-8">
-            <div
-              className="w-14 h-14 rounded-full flex items-center justify-center text-2xl font-bold text-white"
-              style={{ background: roleColor(user.role) }}
-            >
-              {user.name[0]}
-            </div>
-            <div>
-              <div className="text-white text-3xl font-bold">{user.name}</div>
-              <div className="text-slate-400 text-base">{user.team}</div>
-            </div>
-          </div>
-
-          {priority ? (
-            <div className="w-full max-w-3xl space-y-4">
-              {priority.p1.map((text, i) =>
-                text ? (
-                  <div key={i} className="bg-slate-800 border border-slate-600 rounded-2xl px-6 py-5 flex items-start gap-4">
-                    <span className="bg-blue-500 text-white text-sm font-bold rounded-lg px-3 py-1 shrink-0 mt-0.5">
-                      P1-{i + 1}
+        <div className="flex-1 flex gap-4 px-[10%] py-[2%] min-h-0 overflow-hidden">
+          {/* 지난주 (토글 시 좌측 40%) */}
+          {prevPriority && showPrevWeek && (
+            <div className="w-[40%] shrink-0 flex flex-col">
+              <div className="text-slate-500 text-sm font-semibold mb-2 text-center">📅 지난주 · {fmtWeek(prevWeekStr)}</div>
+              <div className="flex-1 flex flex-col gap-2 min-h-0">
+                {prevPriority.p1.map((text, i) =>
+                  text ? (
+                    <div key={i} className="flex-1 bg-slate-800 border border-slate-700 rounded-2xl px-5 py-3 flex flex-col min-h-0">
+                      <span className="bg-blue-500/60 text-blue-200 font-bold rounded-lg px-3 py-1 shrink-0 self-start mb-1" style={{ fontSize: 'clamp(0.75rem, 1.2vw, 1rem)' }}>
+                        P1-{i + 1}
+                      </span>
+                      <div className="flex-1 flex items-center">
+                        <div className="text-slate-300 leading-snug whitespace-pre-wrap overflow-hidden" style={{ fontSize: `${fontSize}px` }}>{text}</div>
+                      </div>
+                    </div>
+                  ) : null
+                )}
+                {prevPriority.p2 && (
+                  <div className="flex-1 bg-slate-800 border border-amber-700/30 rounded-2xl px-5 py-3 flex flex-col min-h-0">
+                    <span className="bg-amber-500/60 text-amber-200 font-bold rounded-lg px-3 py-1 shrink-0 self-start mb-1" style={{ fontSize: 'clamp(0.75rem, 1.2vw, 1rem)' }}>
+                      P2
                     </span>
-                    <div>
-                      <div className="text-white text-xl leading-relaxed whitespace-pre-wrap">{text}</div>
-                      {priority.krTags?.[i] && (
-                        <span className="inline-block mt-2 bg-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-md text-sm">
-                          {priority.krTags[i].toUpperCase()}
-                        </span>
-                      )}
+                    <div className="flex-1 flex items-center">
+                      <div className="text-slate-300 leading-snug whitespace-pre-wrap overflow-hidden" style={{ fontSize: `${fontSize}px` }}>{prevPriority.p2}</div>
                     </div>
                   </div>
-                ) : null
-              )}
-
-              {priority.p2 && (
-                <div className="bg-slate-800 border border-amber-600/40 rounded-2xl px-6 py-5 flex items-start gap-4">
-                  <span className="bg-amber-500 text-white text-sm font-bold rounded-lg px-3 py-1 shrink-0 mt-0.5">
-                    P2
-                  </span>
-                  <div className="text-white text-xl leading-relaxed whitespace-pre-wrap">{priority.p2}</div>
-                </div>
-              )}
-
-              {priority.note && (
-                <div className="text-slate-400 text-base mt-2 whitespace-pre-wrap px-2">
-                  📝 {priority.note}
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          ) : (
-            <div className="text-slate-500 text-xl">이번 주 우선순위가 등록되지 않았습니다.</div>
           )}
 
-          {/* 지난주 토글 */}
-          {prevPriority && (
-            <div className="w-full max-w-3xl mt-6">
-              <button
-                onClick={() => setShowPrevWeek((v) => !v)}
-                className="flex items-center gap-2 text-slate-500 hover:text-slate-300 bg-transparent border-none cursor-pointer text-sm font-semibold mb-3 transition-colors"
-              >
-                <span className="text-xs">{showPrevWeek ? '▼' : '▶'}</span>
-                📅 지난주 ({fmtWeek(prevWeekStr)})
-              </button>
-              {showPrevWeek && (
-                <div className="space-y-2 opacity-70">
-                  {prevPriority.p1.map((text, i) =>
-                    text ? (
-                      <div key={i} className="bg-slate-800/60 border border-slate-700 rounded-xl px-5 py-3 flex items-start gap-3">
-                        <span className="bg-blue-500/50 text-blue-200 text-xs font-bold rounded-md px-2 py-0.5 shrink-0 mt-0.5">
+          {/* 구분선 */}
+          {prevPriority && showPrevWeek && (
+            <div className="w-px bg-slate-700 shrink-0" />
+          )}
+
+          {/* 이번주 */}
+          <div className="flex-1 flex flex-col min-h-0">
+            {prevPriority && showPrevWeek && (
+              <div className="text-slate-400 text-sm font-semibold mb-2 text-center">📋 이번주 · {fmtWeek(week)}</div>
+            )}
+            {priority ? (
+              <div className="flex-1 flex flex-col gap-2 min-h-0">
+                {priority.p1.map((text, i) =>
+                  text ? (
+                    <div key={i} className="flex-1 bg-slate-800 border border-slate-600 rounded-2xl px-5 py-3 flex flex-col min-h-0">
+                      <div className="flex items-center gap-2 shrink-0 mb-1">
+                        <span className="bg-blue-500 text-white font-bold rounded-lg px-3 py-1" style={{ fontSize: 'clamp(0.75rem, 1.5vw, 1.125rem)' }}>
                           P1-{i + 1}
                         </span>
-                        <div className="text-slate-300 text-base leading-relaxed whitespace-pre-wrap">{text}</div>
+                        {priority.krTags?.[i] && (
+                          <span className="bg-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-md" style={{ fontSize: 'clamp(0.625rem, 1vw, 0.875rem)' }}>
+                            {priority.krTags[i].toUpperCase()}
+                          </span>
+                        )}
                       </div>
-                    ) : null
-                  )}
-                  {prevPriority.p2 && (
-                    <div className="bg-slate-800/60 border border-amber-700/30 rounded-xl px-5 py-3 flex items-start gap-3">
-                      <span className="bg-amber-500/50 text-amber-200 text-xs font-bold rounded-md px-2 py-0.5 shrink-0 mt-0.5">
-                        P2
-                      </span>
-                      <div className="text-slate-300 text-base leading-relaxed whitespace-pre-wrap">{prevPriority.p2}</div>
+                      <div className="flex-1 flex items-center">
+                        <div className="text-white leading-snug whitespace-pre-wrap overflow-hidden" style={{ fontSize: `${fontSize}px` }}>{text}</div>
+                      </div>
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+                  ) : null
+                )}
+
+                {priority.p2 && (
+                  <div className="flex-1 bg-slate-800 border border-amber-600/40 rounded-2xl px-5 py-3 flex flex-col min-h-0">
+                    <span className="bg-amber-500 text-white font-bold rounded-lg px-3 py-1 shrink-0 self-start mb-1" style={{ fontSize: 'clamp(0.75rem, 1.5vw, 1.125rem)' }}>
+                      P2
+                    </span>
+                    <div className="flex-1 flex items-center">
+                      <div className="text-white leading-snug whitespace-pre-wrap overflow-hidden" style={{ fontSize: `${fontSize}px` }}>{priority.p2}</div>
+                    </div>
+                  </div>
+                )}
+
+                {priority.note && (
+                  <div className="text-slate-400 whitespace-pre-wrap px-2 mt-1 shrink-0" style={{ fontSize: 'clamp(0.75rem, 1.2vw, 1.125rem)' }}>
+                    📝 {priority.note}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-slate-500 text-xl">이번 주 우선순위가 등록되지 않았습니다.</div>
+            )}
+          </div>
         </div>
 
         {/* Bottom nav */}
