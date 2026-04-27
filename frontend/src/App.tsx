@@ -132,7 +132,7 @@ export default function App() {
             />
           )}
           {activeTab === 'dashboard' && isSuperAdmin && (
-            <Dashboard users={users.filter((u) => u.role !== 'superadmin' && !LEAVE_ONLY_TEAMS.includes(u.team))} teams={teams} />
+            <Dashboard users={users.filter((u) => u.role !== 'superadmin' && !LEAVE_ONLY_TEAMS.includes(u.team))} teams={teams.filter((t) => !LEAVE_ONLY_TEAMS.includes(t))} />
           )}
           {activeTab === 'leave' && (
             <LeavePanel />
