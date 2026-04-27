@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { User, UserDataMap, WeeklyPriority } from '../../types';
 import { getMondayStr, fmtWeek, roleColor } from '../../lib/utils';
+import { LEAVE_ONLY_TEAMS } from '../../lib/seed';
 
 interface Props {
   users: User[];
@@ -46,7 +47,7 @@ function orderUsers(users: User[]): User[] {
 }
 
 export default function PresentationMode({ users, userData, onClose }: Props) {
-  const orderedUsers = orderUsers(users.filter((u) => u.role !== 'superadmin'));
+  const orderedUsers = orderUsers(users.filter((u) => u.role !== 'superadmin' && !LEAVE_ONLY_TEAMS.includes(u.team)));
   const [idx, setIdx] = useState(0);
   const [week, setWeek] = useState(getMondayStr());
   const [showWeekPanel, setShowWeekPanel] = useState(false);

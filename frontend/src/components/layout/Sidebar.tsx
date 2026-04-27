@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../../stores/useStore';
 import { roleColor, getMondayStr } from '../../lib/utils';
+import { LEAVE_ONLY_TEAMS } from '../../lib/seed';
 import TeamManager from '../admin/TeamManager';
 
 export default function Sidebar() {
@@ -75,7 +76,9 @@ export default function Sidebar() {
     return 0;
   })();
 
-  const tabs = [
+  const isLeaveOnly = LEAVE_ONLY_TEAMS.includes(currentUser.team);
+
+  const tabs = isLeaveOnly ? [] : [
     ...(isSuperAdmin ? [{ id: 'dashboard', label: '📊 대시보드', alert: false, special: false }] : []),
     { id: 'okr', label: '📋 OKR 설정', alert: false, special: false },
     { id: 'priority', label: '✅ 주간 우선순위', alert: !!missingThisWeek && !isSuperAdmin, special: false },
@@ -152,7 +155,7 @@ export default function Sidebar() {
             return aAdmin - bAdmin;
           });
         }
-        const TEAM_ORDER = ['앱개발팀', '웹개발팀', '고객지원팀', '컨설팅팀'];
+        const TEAM_ORDER = ['앱개발팀', '웹개발팀', '고객지원팀', '컨설팅팀', '관리팀'];
         const orderedTeams = [
           ...TEAM_ORDER.filter((t) => teamGroups[t]),
           ...Object.keys(teamGroups).filter((t) => !TEAM_ORDER.includes(t)),

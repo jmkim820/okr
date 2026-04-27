@@ -13,6 +13,9 @@ export const SEED_USERS: User[] = [
 
 export const ALLOWED_DOMAINS = ['axissoft.co.kr', 'starplayer.net', 'gmail.com'];
 
+// 휴가 전용 팀 — OKR/주간우선순위/간트 등 안 보이고 휴가 관리만 표시
+export const LEAVE_ONLY_TEAMS = ['관리팀'];
+
 export const SEED_TEAMS = ['개발팀', '기획팀', '디자인팀'];
 
 export const SEED_USER_DATA: UserDataMap = {

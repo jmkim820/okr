@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStore } from './stores/useStore';
+import { LEAVE_ONLY_TEAMS } from './lib/seed';
 import LoginPage from './pages/LoginPage';
 import Header from './components/layout/Header';
 import Sidebar from './components/layout/Sidebar';
@@ -18,7 +19,7 @@ export default function App() {
   const {
     loading, initApp,
     currentUser, users, teams,
-    activeTab, viewUserId,
+    activeTab, setActiveTab, viewUserId,
     saveOkr, savePriorities, archiveQuarter,
   } = useStore();
 
@@ -29,9 +30,17 @@ export default function App() {
   const userData = useStore((s) => s.userData);
   const [showPresentation, setShowPresentation] = useState(false);
 
+  const myTeam = currentUser?.team || '';
+  const isLeaveOnly = LEAVE_ONLY_TEAMS.includes(myTeam);
+
   useEffect(() => {
     initApp();
   }, [initApp]);
+
+  // 휴가 전용 팀이면 강제로 leave 탭
+  useEffect(() => {
+    if (isLeaveOnly && activeTab !== 'leave') setActiveTab('leave');
+  }, [isLeaveOnly, activeTab, setActiveTab]);
 
   if (loading) {
     return (
@@ -45,7 +54,6 @@ export default function App() {
 
   const isSuperAdmin = currentUser.role === 'superadmin';
   const isAdmin = currentUser.role === 'admin' || isSuperAdmin;
-  const myTeam = currentUser.team;
 
   const viewingOther = isSuperAdmin && viewUserId && viewUserId !== currentUser.id;
   const showSelectPrompt = isSuperAdmin && !viewingOther && (activeTab === 'okr' || activeTab === 'priority');
@@ -124,7 +132,7 @@ export default function App() {
             />
           )}
           {activeTab === 'dashboard' && isSuperAdmin && (
-            <Dashboard users={users.filter((u) => u.role !== 'superadmin')} teams={teams} />
+            <Dashboard users={users.filter((u) => u.role !== 'superadmin' && !LEAVE_ONLY_TEAMS.includes(u.team))} teams={teams} />
           )}
           {activeTab === 'leave' && (
             <LeavePanel />
